@@ -2,9 +2,11 @@
 
 ## Zugriff
 
-Der Betreiber erstellt eine signierte Einladung mit Athleten-ID, Gruppe und Ablaufzeit. HMAC-SHA256 schützt diese Angaben gegen Änderungen. Vergleiche der Signatur erfolgen zeitkonstant. Abgelaufene Einladungen werden auch während laufender Verbindungen getrennt. Pro Athleten-ID kann nur eine Sitzung gleichzeitig aktiv sein.
+Der normale Zugang ist **öffentlich und kontolos**. Der lokale Companion wartet auf eine frische eigene Sauce-Position und meldet deren Athleten-ID über einen HTTP-Header an. Alle normalen Nutzer landen in der Gruppe `public`. Eine Sitzung gilt höchstens 24 Stunden; nach Ende oder Neustart meldet der Client sich automatisch neu an. Pro Athleten-ID ist eine Sitzung gleichzeitig möglich; parallele Anmeldeversuche reservieren die ID schon vor dem TURN-Abruf.
 
-Der lokale Client gleicht die eigene Sauce-ID mit der Einladung ab. Der Signalisierungsserver vertraut der übermittelten Position eines autorisierten Clients. Sauce liefert keine kryptografische Attestierung. Ein modifizierter Client kann deshalb seine Position fälschen. Einladungen sind eine kontrollierte Mitgliedschaft; ohne zusätzlichen Identitätsnachweis ist dies keine offene Registrierung mit verifiziertem Zwift-Kontobesitz. Der Signalisierungsdienst ist ebenfalls Teil der Vertrauensgrenze: Er vermittelt SDP und kann somit nicht als untrusted betrachtet werden.
+Sauce liefert keine kryptografische Attestierung. Ein modifizierter Client kann daher **Identität und Position fälschen** und etwa eine fremde ID vorübergehend belegen. Automatische Erkennung ist keine Zwift-Kontoverifikation. Der offene Zugang erfüllt bewusst den kontolosen Start; Rate-Limits ersetzen keine Identitätsprüfung. Der Server vermittelt Signalisierung und ist Teil der Vertrauensgrenze.
+
+Für bestehende eigene Integrationen versteht der Broker weiterhin signierte, zeitbegrenzte private Gruppen über den Authorization-Header. Die normale Oberfläche nutzt diesen Pfad nicht mehr; vorhandene Einladungstokens werden aus ihrem lokalen Speicher entfernt. Ein ungültiger Authorization-Header fällt nicht auf den öffentlichen Zugang zurück.
 
 Nähe ist eine kooperative Anwendungsregel. Der Server vermittelt Signale nur entlang aktueller, aktiver Kanten. Die regulären Clients schließen Peer-Verbindungen, wenn diese Kante wegfällt. Zwei absichtlich modifizierte Clients könnten eine bereits aufgebaute direkte Verbindung weiterbetreiben. Proximity ist keine DRM- oder Geheimhaltungsgrenze gegen kooperierende Angreifer.
 
@@ -16,7 +18,7 @@ Ein Prozess mit den Rechten des lokalen Benutzers bleibt außerhalb dieses Schut
 
 ## Übertragung
 
-Entfernte Signalisierungsserver benötigen HTTPS/WSS. Nur für Loopback-Entwicklung ist HTTP zulässig. Einladungen stehen im Authorization-Header des lokalen Go-Clients, nie in der URL. Der Browser sieht nur seine eigenen kurzlebigen ICE-Zugangsdaten.
+Entfernte Signalisierungsserver benötigen HTTPS/WSS. Nur für Loopback-Entwicklung ist HTTP zulässig. Die eigene Athleten-ID steht im `Zwoice-Athlete-ID`-Header des lokalen Go-Clients, nie in der URL. Optional unterstützte private Tokens bleiben im Authorization-Header. Der Browser sieht nur seine eigenen kurzlebigen ICE-Zugangsdaten.
 
 WebRTC-Audio ist zwischen den Endpunkten mittels DTLS-SRTP verschlüsselt. TURN vermittelt diese verschlüsselten Pakete. Direkte P2P-Verbindungen können IP-Adressen gegenüber Gesprächspartnern offenlegen; die Einstellung „IP-Adresse verbergen“ erzwingt Relay-only und lehnt einen Server ohne TURN ab.
 
@@ -24,13 +26,23 @@ WebRTC-Audio ist zwischen den Endpunkten mittels DTLS-SRTP verschlüsselt. TURN 
 
 | Ort | Daten |
 | --- | --- |
-| Browser lokal | Einstellungen, auf Wunsch Einladung, stummgeschaltete IDs. Löschbar in Einstellungen. |
+| Browser lokal | Einstellungen und stummgeschaltete IDs. Löschbar in Einstellungen. |
 | Go-Client RAM | Aktuelle Sitzung, eigene Position und Verbindungskonfiguration. |
-| Railway RAM | Aktuelle ID, Anzeigename, Gruppe, Position, Zeitstempel und Signalisierungsverbindungen. Bei Trennung gelöscht. |
+| Railway RAM | Aktuelle ID, Anzeigename, Gruppe, Position, Zeitstempel und Signalisierungsverbindungen. Bei Trennung gelöscht. Rate-Limit-Zähler speichern IP-Präfixe und Zeitstempel vorübergehend; inaktive Einträge werden beim nächsten Anmeldeversuch nach zehn Minuten entfernt, maximal 10.000 Einträge. |
 | Cloudflare/coturn | Relay-Verbindungsmetadaten gemäß Anbieter-/Betreiberkonfiguration. |
 
 Keine Audioaufzeichnung, Transkription, Analyse-Skripte oder Positionshistorie werden in Zwoice implementiert. Der Hostinganbieter kann technische Zugriffs-/Netzwerkdaten verarbeiten. Für einen öffentlichen Dienst muss der Betreiber seine konkrete Datenschutzinformation, Aufbewahrung und Anbietervereinbarungen passend zum tatsächlichen Betrieb festlegen.
 
 ## Missbrauch und Betrieb
 
-Puffer, Nachrichtengröße, Rate und Gesamtverbindungen sind begrenzt. Der Dienst gibt kein vollständiges öffentliches Teilnehmerverzeichnis zurück. Einladungen können aktuell durch Ablauf oder durch Rotation des globalen Signierschlüssels ungültig gemacht werden; es gibt keine persistente individuelle Widerrufsliste. Für große öffentliche Communities sollten vor einer Öffnung Kontoverifikation, individuelle Sperren und Missbrauchsmeldungen ergänzt werden.
+Puffer, Nachrichtengröße und Gesamtverbindungen sind begrenzt. Öffentliche Verbindungen haben zusätzliche Grenzen:
+
+- Höchstens acht gleichzeitig aktive/anmeldende Sitzungen je IPv4-Adresse oder IPv6-/64-Präfix.
+- Pro IP-Präfix 20 Anmeldeversuche als Burst, danach ein neuer Versuch je zehn Sekunden.
+- Global 60 Versuche als Burst, danach zwei je Sekunde; maximal 16 gleichzeitige TURN-Erstanfragen.
+- Maximal 1.000 Clients und 10.000 gespeicherte IP-Limit-Einträge. Volle Limits antworten kontrolliert; Clients warten vor dem erneuten Versuch.
+- TURN-Zugangsdaten gelten eine Stunde und werden nach 30 Minuten erneuert. Dauerhafte Cloudflare-Geheimnisse bleiben ausschließlich auf Railway.
+
+IP-Header werden nur bei Ausführung auf Railway (`RAILWAY_PROJECT_ID`) übernommen, über den dort vom HTTP-Ingress gesetzten `X-Real-IP`-Header. [Railway-Spezifikation](https://docs.railway.com/networking/public-networking/specs-and-limits). Ohne diesen Modus zählt die direkte TCP-Gegenstelle; fremde Forwarding-Header werden ignoriert. Der Railway-Dienst darf nicht zusätzlich über einen ungeschützten TCP-Proxy erreichbar gemacht werden.
+
+Die Limits begrenzen Anmelde- und Ressourcenmissbrauch; sie garantieren keine feste TURN-Bandreiten-/Kostengrenze. Gültige kurzlebige TURN-Zugangsdaten können von modifizierten Clients bis zum Ablauf anderweitig verwendet werden. Anbieter-Budgetalarme und Missbrauchsbeobachtung gehören zum öffentlichen Betrieb. Es gibt derzeit keine verifizierten Konten, persistente Sperrliste oder Meldungsstelle innerhalb der App. Stummschaltungen gelten lokal. Ein globaler Signierschlüsselwechsel betrifft nur den optionalen privaten Zugang.

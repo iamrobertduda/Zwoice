@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#192b24" />
+    <title>Zwoice — Gute Gespräche fahren neben dir.</title>
+    <meta
+      name="description"
+      content="Sprich beim Zwiften automatisch mit anderen Fahrern in deiner Nähe. Zwoice für Windows, macOS und Linux. Ohne Konto oder Einladung."
+    />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/download.css" />
+    <script defer src="/download.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/" class="brand" aria-label="Zwoice">zwoice<span>.</span></a
+      ><a
+        class="nav-link"
+        href="https://github.com/iamrobertduda/Zwoice"
+        target="_blank"
+        rel="noopener"
+        >Das Projekt ↗</a
+      >
+    </header>
+    <main>
+      <section class="hero">
+        <div class="intro">
+          <p class="eyebrow">GOOD RIDES. GREAT COMPANY.</p>
+          <h1>Dein nächstes Gespräch fährt <em>neben dir.</em></h1>
+          <p class="lead">
+            Zwoice verbindet dich beim Zwiften mit anderen in deiner Nähe.
+            Nebeneinander wird geredet. Mit Abstand wird es leiser.
+          </p>
+          <div class="download-box">
+            <label for="platform">Dein Computer</label>
+            <select id="platform">
+              <option value="windows">Windows</option>
+              <option value="macos">macOS</option>
+              <option value="linux">Linux</option>
+              <option value="linux-arm">Linux ARM64</option>
+            </select>
+            <a
+              class="download-button"
+              id="downloadButton"
+              href="https://github.com/iamrobertduda/Zwoice/releases/download/v1.1.0/Zwoice-Windows-Setup.exe"
+              >Für Windows herunterladen <span aria-hidden="true">↓</span></a
+            >
+            <p id="downloadNote">
+              Installation für dein Benutzerkonto. Keine Administratorrechte
+              nötig.
+            </p>
+            <p id="mobileNote" hidden>
+              Zwoice läuft auf deinem Computer. Öffne diese Seite dort, um es zu
+              installieren.
+            </p>
+          </div>
+          <p class="no-account">
+            Kein Zwoice-Konto. Kein Einladungscode. Einfach dabei.
+          </p>
+        </div>
+        <div
+          class="ride-visual"
+          aria-label="Du hörst eine Fahrerin in 8 Metern klar, einen Fahrer in 35 Metern leiser und niemanden jenseits von 60 Metern."
+        >
+          <div class="ride-top">
+            <span class="live-dot"></span> DEIN VIRTUELLES GRUPPETTO
+            <span>60 m</span>
+          </div>
+          <div class="orbit outer"></div>
+          <div class="orbit middle"></div>
+          <div class="orbit inner"></div>
+          <div class="road-line"></div>
+          <div class="rider you"><b>Du</b><span>Mittendrin.</span></div>
+          <div class="rider emma">
+            <b>E</b><span>Emma · 8 m</span><small>Klar & nah</small>
+          </div>
+          <div class="rider flo">
+            <b>F</b><span>Flo · 35 m</span><small>Etwas leiser</small>
+          </div>
+          <div class="rider nils">
+            <b>N</b><span>Nils · 65 m</span><small>Außer Hörweite</small>
+          </div>
+          <div class="ride-bottom">
+            So fühlt sich gemeinsam fahren an.<small
+              >Schematische Darstellung mit Beispielpersonen.</small
+            >
+          </div>
+        </div>
+      </section>
+      <section class="start-strip" aria-label="So einfach startest du">
+        <div><span>01</span><strong>Zwoice öffnen.</strong></div>
+        <i aria-hidden="true">→</i>
+        <div><span>02</span><strong>Mikrofon erlauben.</strong></div>
+        <i aria-hidden="true">→</i>
+        <div><span>03</span><strong>Gemeinsam losfahren.</strong></div>
+      </section>
+      <section class="prerequisite">
+        <div>
+          <p class="eyebrow">DEINE FAHRT. AUTOMATISCH ERKANNT.</p>
+          <h2>Du fährst. Sauce zeigt uns, wo.</h2>
+          <p>
+            Zwoice braucht
+            <strong>Zwift und Sauce for Zwift mit aktivem Webserver</strong>.
+            Zwoice erkennt deinen Fahrer dann selbst. Deine Gesprächspartner
+            brauchen ebenfalls Zwoice und Sauce.
+          </p>
+          <p>
+            Zwift und Sauce sind separate Anwendungen mit eigenen Konten und
+            Nutzungsbedingungen. Noch kein Sauce? Der Startbildschirm hilft dir
+            beim Verbinden.
+          </p>
+          <a
+            href="https://www.sauce.llc/products/sauce4zwift/download"
+            target="_blank"
+            rel="noopener"
+            >Sauce for Zwift herunterladen ↗</a
+          >
+        </div>
+        <div class="small-promise">
+          <strong>Dein Mikrofon.<br />Deine Kontrolle.</strong>
+          <p>
+            Stummschalten, Lautstärke ändern oder einzelne Personen ausblenden –
+            direkt in deiner Ausfahrt.
+          </p>
+          <p>Verschlüsselte Sprache. Keine Audioaufzeichnung durch Zwoice.</p>
+        </div>
+      </section>
+      <details class="install-note">
+        <summary>Hinweise zur Installation</summary>
+        <p id="installDetail">
+          Öffne die heruntergeladene Datei. Der Installer legt Zwoice im
+          Startmenü an und kann es direkt starten.
+        </p>
+        <p>
+          Die Pakete sind derzeit nicht mit einem verifizierten
+          Herausgeberzertifikat signiert; das macOS-Paket ist noch nicht
+          notarisiert. Daher können Windows oder macOS beim ersten Öffnen eine
+          zusätzliche Sicherheitsfreigabe verlangen.
+        </p>
+        <p>
+          Apple TV, iPhone und Android führen Zwoice nicht direkt aus. Linux
+          wird von Zwoice unterstützt; Zwift selbst benötigt eine unterstützte
+          Plattform.
+        </p>
+        <a href="https://github.com/iamrobertduda/Zwoice/releases/tag/v1.1.0"
+          >Alle Pakete, Prüfsummen und Versionshinweise ↗</a
+        >
+      </details>
+    </main>
+    <footer>
+      <span>zwoice. <small>Für die Kilometer dazwischen.</small></span
+      ><span>Unabhängig von Zwift und Sauce LLC.</span>
+    </footer>
+  </body>
+</html>

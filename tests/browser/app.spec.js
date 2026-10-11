@@ -66,9 +66,7 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
             "zwoice.settings",
             JSON.stringify({
               ...config,
-              name: i ? "Emma Klein" : "Flo Weber",
               sauce: `http://127.0.0.1:${11081 + i}`,
-              remember: true,
               volume: 80,
               relayOnly,
             }),
@@ -279,4 +277,132 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
       "http://127.0.0.1:11080/move?id=1002&x=8&course=1&frozen=false",
     );
   }
+});
+
+test("first launch needs no account, invitation, name or settings and waits for the ride", async ({
+  page,
+  request,
+}) => {
+  const config = await (
+    await request.get("http://127.0.0.1:11080/config")
+  ).json();
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: { ...config, sauce: "http://127.0.0.1:11081" } }),
+  );
+  await request.post("http://127.0.0.1:11080/move?id=1001&riding=false");
+  await page.addInitScript(() => {
+    window.__sockets = [];
+    const WS = WebSocket;
+    window.WebSocket = class extends WS {
+      constructor(...args) {
+        super(...args);
+        window.__sockets.push(this);
+      }
+    };
+  });
+  try {
+    await page.goto("http://127.0.0.1:18787");
+    await expect(page.locator("#setupTitle")).toHaveText(
+      "Sauce ist da. Jetzt noch losfahren.",
+      { timeout: 8000 },
+    );
+    await expect(page.locator("#inviteToken")).toHaveCount(0);
+    await page.getByRole("button", { name: "Fahrt starten" }).click();
+    await expect(page.locator("#settingsDialog")).not.toBeVisible();
+    // Longer than the heartbeat watchdog: waiting must not restart the session.
+    await expect
+      .poll(async () => page.evaluate(() => window.__sockets.length))
+      .toBe(1);
+    await page.waitForTimeout(8200);
+    expect(await page.evaluate(() => window.__sockets.length)).toBe(1);
+    await request.post("http://127.0.0.1:11080/move?id=1001&riding=true");
+    await expect(page.locator("#sessionBadge")).toHaveText(
+      "Du bist in Hörweite",
+      { timeout: 15000 },
+    );
+    await expect(page.locator("#setupPanel")).not.toBeVisible();
+    await page.getByRole("button", { name: "Fahrt beenden" }).click();
+    await expect(page.locator("#setupTitle")).toHaveText("Bereit, Flo?", {
+      timeout: 8000,
+    });
+    await page.locator("#settingsNav").click();
+    await expect(page.locator("#serverURL")).not.toBeVisible();
+    await expect(page.locator("#displayName")).toHaveValue("");
+    await page.keyboard.press("Escape");
+    await page.screenshot({
+      path: "test-results/zwoice-ready.png",
+      fullPage: true,
+    });
+  } finally {
+    await request.post("http://127.0.0.1:11080/move?id=1001&riding=true");
+  }
+});
+
+test("missing Sauce gives an actionable prompt and upgrades discard old invitations", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "zwoice.settings",
+      JSON.stringify({
+        token: "old-secret",
+        remember: true,
+        sauce: "http://127.0.0.1:11079",
+      }),
+    ),
+  );
+  await page.goto("http://127.0.0.1:18787");
+  await expect(page.locator("#sauceActions")).toBeVisible({ timeout: 8000 });
+  await expect(
+    page.getByRole("link", { name: "Sauce herunterladen ↗" }),
+  ).toHaveAttribute(
+    "href",
+    "https://www.sauce.llc/products/sauce4zwift/download",
+  );
+  expect(
+    await page.evaluate(() => localStorage.getItem("zwoice.settings")),
+  ).not.toContain("old-secret");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/zwoice-setup-mobile.png",
+    fullPage: true,
+  });
+});
+
+test("public download page offers one installer per desktop platform", async ({
+  page,
+}) => {
+  await page.goto("http://127.0.0.1:18089");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Dein nächstes Gespräch",
+  );
+  await page.locator("#platform").selectOption("macos");
+  await expect(page.locator("#downloadButton")).toHaveAttribute(
+    "href",
+    /Zwoice-macOS\.dmg$/,
+  );
+  await page.locator("#platform").selectOption("windows");
+  await expect(page.locator("#downloadButton")).toHaveAttribute(
+    "href",
+    /Zwoice-Windows-Setup\.exe$/,
+  );
+  await page.screenshot({
+    path: "test-results/zwoice-downloads.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/zwoice-downloads-mobile.png",
+    fullPage: true,
+  });
 });

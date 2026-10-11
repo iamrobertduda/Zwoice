@@ -5,25 +5,37 @@ const defaults = {
   name: "",
   sauce: "http://127.0.0.1:1080",
   server: "",
-  token: "",
   inputDevice: "",
   outputDevice: "",
   noiseSuppression: true,
   pushToTalk: false,
   relayOnly: false,
   volume: 80,
-  remember: false,
 };
 let stored = {};
 try {
   stored = JSON.parse(localStorage.getItem("zwoice.settings") || "{}");
 } catch {}
-let settings = { ...defaults, ...stored };
-fetch("/config.json")
+// Drop saved invitations on upgrade; normal use is now entirely self-service.
+let settings = Object.fromEntries(
+  Object.keys(defaults).map((key) => [key, stored[key] ?? defaults[key]]),
+);
+if (stored.token || stored.remember) {
+  try {
+    localStorage.setItem("zwoice.settings", JSON.stringify(settings));
+  } catch {}
+}
+const configuration = fetch("/config.json")
   .then((r) => r.json())
   .then((config) => {
-    if (!settings.server && typeof config.server === "string")
-      settings.server = config.server;
+    if (typeof config.sauce === "string" && !stored.sauce) {
+      defaults.sauce = config.sauce;
+      settings.sauce = config.sauce;
+    }
+    if (typeof config.server === "string") {
+      defaults.server = config.server;
+      if (!settings.server) settings.server = config.server;
+    }
   })
   .catch(() => {});
 let socket,
@@ -35,7 +47,10 @@ let socket,
   attempt = 0,
   lastMessage = 0,
   peers = [],
-  requestGeneration = 0;
+  requestGeneration = 0,
+  retryAfter = 0,
+  reconnectReason = "",
+  setupState = "checking";
 const rows = new Map(),
   dots = new Map(),
   peerStates = new Map();
@@ -81,13 +96,7 @@ function send(message) {
 }
 function saveSettings() {
   try {
-    localStorage.setItem(
-      "zwoice.settings",
-      JSON.stringify({
-        ...settings,
-        token: settings.remember ? settings.token : "",
-      }),
-    );
+    localStorage.setItem("zwoice.settings", JSON.stringify(settings));
   } catch {
     notice("Einstellungen konnten in diesem Browser nicht gespeichert werden.");
   }
@@ -108,8 +117,6 @@ function showSettings() {
   $("displayName").value = settings.name;
   $("sauceURL").value = settings.sauce;
   $("serverURL").value = settings.server;
-  $("inviteToken").value = settings.token;
-  $("rememberInvite").checked = settings.remember;
   $("noiseSuppression").checked = settings.noiseSuppression;
   $("pushToTalk").checked = settings.pushToTalk;
   $("relayOnly").checked = settings.relayOnly;
@@ -153,9 +160,7 @@ $("settingsForm").addEventListener("submit", (event) => {
     ...settings,
     name: $("displayName").value.trim(),
     sauce: $("sauceURL").value.trim(),
-    server: $("serverURL").value.trim(),
-    token: $("inviteToken").value.trim(),
-    remember: $("rememberInvite").checked,
+    server: $("serverURL").value.trim() || defaults.server,
     inputDevice: $("inputDevice").value,
     outputDevice: $("outputDevice").value,
     noiseSuppression: $("noiseSuppression").checked,
@@ -182,7 +187,7 @@ $("forgetButton").onclick = () => {
   $("volume").value = 80;
   $("volumeValue").value = "80 %";
   $("settingsDialog").close();
-  notice("Gespeicherte Einstellungen und Einladung gelöscht.");
+  notice("Gespeicherte Einstellungen und Stummschaltungen gelöscht.");
 };
 $("quitButton").onclick = async () => {
   stop();
@@ -208,10 +213,6 @@ document
 
 $("connectButton").onclick = () => (wanted ? stop() : start());
 async function start() {
-  if (!settings.name || !settings.server || !settings.token) {
-    showSettings();
-    return;
-  }
   if (
     !navigator.mediaDevices?.getUserMedia ||
     !window.RTCPeerConnection ||
@@ -226,6 +227,7 @@ async function start() {
   if (demo) exitDemo();
   wanted = true;
   attempt = 0;
+  reconnectReason = "";
   const generation = ++requestGeneration;
   $("connectButton").textContent = "Abbrechen";
   badge("Mikrofon wird vorbereitet");
@@ -235,6 +237,8 @@ async function start() {
     if (!opened || generation !== requestGeneration || !wanted) return;
     notice("Verbinde mit deiner Fahrt …");
     refreshDevices();
+    await configuration;
+    if (generation !== requestGeneration || !wanted) return;
     connect();
     renderControls();
   } catch (error) {
@@ -270,7 +274,6 @@ function connect() {
         JSON.stringify({
           server: settings.server,
           sauce: settings.sauce,
-          token: settings.token,
           name: settings.name,
         }),
       );
@@ -280,10 +283,19 @@ function connect() {
     lastMessage = Date.now();
     try {
       const m = JSON.parse(data);
-      if (m.type === "welcome") {
+      if (m.type === "setup") {
+        renderSetup(m.state, m.name);
+        badge(
+          m.state === "connecting"
+            ? "Deine Fahrt wird verbunden"
+            : "Warte auf deine Fahrt",
+        );
+        notice(m.message);
+      } else if (m.type === "welcome") {
         voice.configure(m.id, m.iceServers);
         ready = true;
         attempt = 0;
+        reconnectReason = "";
         send({ type: "voice", active: true });
         connection("server", true, "Verbunden · Sprache verschlüsselt");
         $("connectButton").textContent = "Fahrt beenden";
@@ -299,6 +311,7 @@ function connect() {
           sauceConnected ? `Fahrer ${m.athleteId} · Live-Daten` : m.message,
         );
         $("liveDot").classList.toggle("active", sauceConnected);
+        $("setupPanel").hidden = sauceConnected;
         if (sauceConnected) {
           $("worldLabel").textContent =
             worlds[m.course] || `Zwift-Welt ${m.course}`;
@@ -306,6 +319,7 @@ function connect() {
           $("selfLabel").textContent = "Du bist dabei";
           if (changed) notice("");
         } else {
+          renderSetup("waiting");
           badge("Sprache pausiert");
           renderPeers([]);
           notice(m.message);
@@ -323,6 +337,8 @@ function connect() {
       } else if (m.type === "ice") {
         voice.configure(voice.id, m.iceServers);
       } else if (m.type === "error") {
+        retryAfter = Math.min(60, Math.max(0, Number(m.retryAfter) || 0));
+        reconnectReason = m.message;
         notice(m.message, true);
         if (m.fatal !== false) stop(false);
       }
@@ -347,11 +363,16 @@ function connect() {
     if (wanted) {
       badge("Verbindung wird wiederhergestellt");
       const delay =
-        Math.min(15000, 700 * 2 ** Math.min(attempt++, 5)) +
+        Math.max(
+          retryAfter * 1000,
+          Math.min(15000, 700 * 2 ** Math.min(attempt++, 5)),
+        ) +
         Math.random() * 400;
       notice(
-        "Verbindung unterbrochen. Zwoice verbindet sich automatisch erneut. Falls ein zweiter Tab geöffnet ist, schließe ihn.",
+        reconnectReason ||
+          "Verbindung unterbrochen. Zwoice verbindet sich automatisch erneut. Falls ein zweiter Tab geöffnet ist, schließe ihn.",
       );
+      retryAfter = 0;
       retryTimer = setTimeout(connect, delay);
     }
   };
@@ -374,6 +395,8 @@ function stop(clearNotice = true) {
   renderPeers([]);
   renderControls();
   $("connectButton").textContent = "Fahrt starten";
+  $("setupPanel").hidden = false;
+  renderSetup(setupState);
   $("liveDot").classList.remove("active");
   $("worldLabel").textContent = "Warte auf deine Fahrt";
   $("selfLabel").textContent = "Startklar";
@@ -616,6 +639,7 @@ $("demoButton").onclick = () => {
   }
   stop();
   demo = true;
+  $("setupPanel").hidden = true;
   $("demoButton").textContent = "Demo beenden";
   $("demoControl").hidden = false;
   badge("Demo · simulierte Fahrt", true);
@@ -648,3 +672,83 @@ function exitDemo() {
   stop();
 }
 renderControls();
+
+function renderSetup(state, name = "") {
+  setupState = state;
+  if (demo || sauceConnected) return;
+  $("setupPanel").hidden = false;
+  const content = {
+    checking: [
+      "Wir schauen, ob deine Fahrt bereit ist.",
+      "Zwoice erkennt dich automatisch über Sauce. Kein Konto, kein Einladungscode.",
+    ],
+    missing: [
+      "Öffne Zwift und Sauce. Wir warten hier.",
+      "Zwoice braucht Sauce for Zwift, um deine Nähe zu anderen Fahrern zu erkennen. Sobald beide laufen, geht es automatisch weiter.",
+    ],
+    waiting: [
+      "Sauce ist da. Jetzt noch losfahren.",
+      "Starte deine eigene Fahrt in Zwift. Wir erkennen dich automatisch, sobald du auf der Strecke bist.",
+    ],
+    ready: [
+      name ? `Bereit, ${name.split(" ")[0]}?` : "Deine Fahrt ist bereit.",
+      "Klicke auf „Fahrt starten“ und erlaube dein Mikrofon. Alles andere ist schon eingestellt.",
+    ],
+    connecting: [
+      "Deine Fahrt ist erkannt.",
+      "Wir verbinden deinen Sprachchat. Gleich bist du in Hörweite.",
+    ],
+  }[state] || ["Wir verbinden deine Fahrt.", "Das geht automatisch weiter."];
+  if (!wanted)
+    connection(
+      "sauce",
+      ["waiting", "ready"].includes(state),
+      state === "ready"
+        ? "Deine Fahrt wurde erkannt"
+        : state === "waiting"
+          ? "Verbunden · Warte auf deine Fahrt"
+          : "Warte auf Sauce",
+    );
+  $("setupTitle").textContent = content[0];
+  $("setupDescription").textContent = content[1];
+  $("setupSymbol").textContent = state === "ready" ? "✓" : "↗";
+  $("setupSauce").classList.toggle(
+    "done",
+    ["waiting", "ready", "connecting"].includes(state),
+  );
+  $("setupRide").classList.toggle(
+    "done",
+    ["ready", "connecting"].includes(state),
+  );
+  $("setupMic").classList.toggle("done", Boolean(voice.stream));
+  $("sauceActions").hidden = state !== "missing";
+}
+let setupBusy = false;
+async function checkSetup() {
+  if (setupBusy || demo || ready || document.hidden) return;
+  setupBusy = true;
+  const generation = requestGeneration;
+  try {
+    const response = await fetch("/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sauce: settings.sauce }),
+      signal: AbortSignal.timeout(3500),
+    });
+    if (!response.ok) return;
+    const result = await response.json();
+    if (generation === requestGeneration && !ready)
+      renderSetup(result.state, result.name);
+  } catch {
+    /* Session connection reports an unavailable companion. */
+  } finally {
+    setupBusy = false;
+  }
+}
+$("connectionSettingsButton").onclick = () => {
+  showSettings();
+  $("advancedSettings").open = true;
+  $("sauceURL").focus();
+};
+checkSetup();
+setInterval(checkSetup, 3000);

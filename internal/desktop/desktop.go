@@ -23,7 +23,6 @@ import (
 type Start struct {
 	Server string `json:"server"`
 	Sauce  string `json:"sauce"`
-	Token  string `json:"token"`
 	Name   string `json:"name"`
 }
 
@@ -68,6 +67,7 @@ func Handler(host string, shutdown ...func()) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 		go shutdown[0]()
 	})
+	mux.HandleFunc("POST /api/setup", setup)
 	mux.Handle("GET /", web.Handler())
 	mux.HandleFunc("GET /api/session", func(w http.ResponseWriter, r *http.Request) {
 		if !active.CompareAndSwap(false, true) {
@@ -96,6 +96,12 @@ func Handler(host string, shutdown ...func()) http.Handler {
 		if err != nil {
 			return
 		}
+		if start.Server == "" {
+			start.Server = DefaultServerURL
+		}
+		if start.Sauce == "" {
+			start.Sauce = "http://127.0.0.1:1080"
+		}
 		remoteURL, err := BrokerURL(start.Server)
 		if err != nil {
 			fail(err.Error())
@@ -105,21 +111,97 @@ func Handler(host string, shutdown ...func()) http.Handler {
 			fail(err.Error())
 			return
 		}
+		// Read the browser from the beginning so closing/cancelling while Sauce
+		// is absent cancels every pending request and releases this tab's slot.
+		messages := make(chan broker.Message, 32)
+		go func() {
+			defer cancel()
+			for {
+				var m broker.Message
+				if wsjson.Read(ctx, conn, &m) != nil {
+					return
+				}
+				select {
+				case messages <- m:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		samples := make(chan sauce.Sample, 1)
+		statuses := make(chan string, 1)
+		go sauce.Run(ctx, start.Sauce, func(sample sauce.Sample) {
+			select {
+			case <-samples:
+			default:
+			}
+			select {
+			case samples <- sample:
+			default:
+			}
+		}, func(message string) {
+			select {
+			case <-statuses:
+			default:
+			}
+			select {
+			case statuses <- message:
+			default:
+			}
+		})
+		pulseCtx, stopPulse := context.WithCancel(ctx)
+		defer stopPulse()
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-pulseCtx.Done():
+					return
+				case <-ticker.C:
+					if write(map[string]any{"type": "heartbeat"}) != nil {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+		write(map[string]any{"type": "setup", "state": "waiting", "message": "Starte deine Fahrt in Zwift. Zwoice verbindet dich automatisch."})
+		var first sauce.Sample
+	waitForRide:
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case first = <-samples:
+				break waitForRide
+			case <-statuses:
+				write(map[string]any{"type": "setup", "state": "missing", "message": "Öffne Sauce for Zwift. Sobald deine Fahrt erkannt wird, geht es automatisch weiter."})
+			}
+		}
+		write(map[string]any{"type": "setup", "state": "connecting", "name": first.Name, "message": "Fahrt erkannt. Verbinde deinen Sprachchat …"})
 		c, s = context.WithTimeout(ctx, 8*time.Second)
-		remote, res, err := websocket.Dial(c, remoteURL.String(), &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + start.Token}}})
+		remote, res, err := websocket.Dial(c, remoteURL.String(), &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-ID": []string{strconv.FormatInt(first.AthleteID, 10)}}})
 		s()
 		if err != nil {
 			message := "Sprachserver nicht erreichbar. Adresse und Verbindung prüfen."
 			if res != nil && res.StatusCode == 401 {
-				message = "Einladung ungültig oder abgelaufen."
+				message = "Diese Zwoice-Version wird vom Server nicht unterstützt. Bitte die aktuelle Version installieren."
 			}
 			if res != nil && res.StatusCode == 409 {
-				message = "Dieser Fahrer ist bereits verbunden oder der Server ist voll."
+				message = "Deine Fahrt ist bereits in einem anderen Zwoice-Fenster verbunden. Schließe das andere Fenster."
 			}
 			if res != nil && res.StatusCode == 503 {
-				message = "Der TURN-Dienst ist momentan nicht verfügbar. Bitte später erneut verbinden."
+				message = "Der Sprachdienst ist gerade ausgelastet oder vorübergehend nicht verfügbar. Zwoice versucht es automatisch erneut."
 			}
-			write(map[string]any{"type": "error", "fatal": res != nil && res.StatusCode == 401, "message": message})
+			if res != nil && res.StatusCode == 429 {
+				message = "Ein kurzer Moment Pause. Zwoice verbindet sich gleich automatisch erneut."
+			}
+			retryAfter := 0
+			if res != nil && res.StatusCode == 429 {
+				retryAfter = 15
+			}
+			write(map[string]any{"type": "error", "fatal": res != nil && res.StatusCode == 401, "retryAfter": retryAfter, "message": message})
 			return
 		}
 		defer remote.CloseNow()
@@ -143,8 +225,13 @@ func Handler(host string, shutdown ...func()) http.Handler {
 			fail("Inkompatibler Sprachserver")
 			return
 		}
+		stopPulse()
 		write(welcome)
-		send(broker.Message{Type: "hello", Name: start.Name})
+		name := strings.TrimSpace(start.Name)
+		if name == "" {
+			name = first.Name
+		}
+		send(broker.Message{Type: "hello", Name: name})
 		go func() {
 			defer cancel()
 			for {
@@ -157,41 +244,33 @@ func Handler(host string, shutdown ...func()) http.Handler {
 				}
 			}
 		}()
-		// Coalesce Sauce to four updates/second, independent of its packet rate.
-		samples := make(chan sauce.Sample, 1)
-		go sauce.Run(ctx, start.Sauce, func(sample sauce.Sample) {
-			select {
-			case samples <- sample:
-			default:
-				select {
-				case <-samples:
-				default:
-				}
-				select {
-				case samples <- sample:
-				default:
-				}
-			}
-		}, func(message string) {
-			send(broker.Message{Type: "position"})
-			write(map[string]any{"type": "sauce", "connected": false, "message": message})
-		})
+		// Send the seed immediately. Later samples are coalesced to four/second.
+		send(broker.Message{Type: "position", Position: &first.Position})
+		write(map[string]any{"type": "sauce", "connected": true, "athleteId": first.AthleteID, "course": first.Position.Course, "name": name})
 		go func() {
 			ticker := time.NewTicker(250 * time.Millisecond)
 			defer ticker.Stop()
-			var last time.Time
-			stale := true
+			last := time.Now()
+			stale := false
 			for {
 				select {
 				case <-ctx.Done():
 					return
+				case <-statuses:
+					send(broker.Message{Type: "position"})
+					write(map[string]any{"type": "sauce", "connected": false, "message": "Sauce-Verbindung unterbrochen. Zwoice wartet auf deine Fahrt."})
+					stale = true
 				case <-ticker.C:
 					select {
 					case sample := <-samples:
 						if strconv.FormatInt(sample.AthleteID, 10) != welcome.ID {
-							fail("Die Einladung gehört zu einer anderen Zwift-ID als Sauce /self.")
+							write(map[string]any{"type": "error", "fatal": false, "message": "Neuer Fahrer erkannt. Zwoice verbindet deine neue Fahrt automatisch."})
 							cancel()
 							return
+						}
+						if start.Name == "" && sample.Name != "" && sample.Name != name {
+							name = sample.Name
+							send(broker.Message{Type: "hello", Name: name})
 						}
 						last = time.Now()
 						stale = false
@@ -212,8 +291,10 @@ func Handler(host string, shutdown ...func()) http.Handler {
 		}()
 		for {
 			var m broker.Message
-			if wsjson.Read(ctx, conn, &m) != nil {
+			select {
+			case <-ctx.Done():
 				return
+			case m = <-messages:
 			}
 			// The browser can control voice and signaling, never its own position.
 			if m.Type == "voice" || m.Type == "signal" {

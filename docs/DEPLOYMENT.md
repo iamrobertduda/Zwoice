@@ -10,7 +10,7 @@ Die öffentliche Railway-Netzwerkschnittstelle unterstützt HTTP und TCP; eingeh
 
 1. Neues Projekt **Zwoice** mit Service `zwoice` anlegen und dieses Repository als Service verbinden. Railway baut das `Dockerfile`.
 2. Region möglichst nahe an der Hauptnutzergruppe wählen, zunächst Europa für eine europäische Community.
-3. `ZWOICE_SIGNING_KEY` als Secret setzen: mindestens 32 zufällige Bytes. Lokal beispielsweise `openssl rand -hex 32`. Schlüssel nicht im Repository oder in Client-Paketen speichern.
+3. Nur für ältere private API-Integrationen optional `ZWOICE_SIGNING_KEY` setzen (mindestens 32 zufällige Bytes). Der öffentliche Zugang braucht diesen Schlüssel nicht. Vorhandene Secrets werden vom IaC-Plan bewahrt.
 4. Cloudflare-Variablen aus dem nächsten Abschnitt setzen.
 5. Eine öffentliche Railway-Domain generieren. Die Basisadresse `https://…up.railway.app` wird im Client eingetragen.
 6. Exakt **eine Replik** betreiben. Zwoice hält Präsenz im Prozessspeicher; unabhängig replizierte Instanzen würden Teilnehmer auf getrennte Graphen verteilen.
@@ -20,7 +20,7 @@ Die aktuelle Infrastrukturdatei ist `.railway/railway.ts`. Nach `npm ci` und `ra
 
 Railway wertet `.railway/` nicht automatisch bei jedem Code-Deployment aus. Änderungen daran erfordern ein separates `config apply`. Das alte `railway.json` ist abgekündigt und wird deshalb nicht mehr ausgeliefert. [Railway IaC](https://docs.railway.com/infrastructure-as-code)
 
-Der eingerichtete Dienst ist unter `https://zwoice-production.up.railway.app` erreichbar und in den Desktop-Paketen voreingestellt. Diese Adresse liefert Signalisierung; die Bedienoberfläche läuft lokal im Desktop-Programm.
+Der eingerichtete Dienst ist unter `https://zwoice-production.up.railway.app` erreichbar und in den Desktop-Paketen voreingestellt. Diese Adresse liefert Download-Seite und Signalisierung; die Bedienoberfläche läuft lokal im Desktop-Programm.
 
 Railway nutzt standardmäßig „On Failure“ mit bis zu zehn Neustarts. [Neustartregeln](https://docs.railway.com/deployments/restart-policy)
 
@@ -32,7 +32,7 @@ Railway nutzt standardmäßig „On Failure“ mit bis zu zehn Neustarts. [Neust
 2. Dessen Key-ID als `ZWOICE_CF_TURN_KEY_ID` und das zugehörige API-Token als `ZWOICE_CF_TURN_API_TOKEN` in Railway speichern.
 3. Neu bereitstellen. Zwoice ruft den Cloudflare-Endpunkt zur Ausstellung kurzlebiger ICE-Zugangsdaten serverseitig auf. Die dauerhaften Geheimnisse verlassen den Server nicht.
 
-Zugangsdaten gelten 12 Stunden und werden bei laufenden Sitzungen nach 6 Stunden erneuert. Vorübergehende Fehler bei der Erneuerung werden nach einer Minute erneut versucht. Ein Fehler beim erstmaligen Abruf lässt die Anmeldung kontrolliert scheitern, statt eine vermeintlich zuverlässige Sitzung ohne Relay zu starten.
+Zugangsdaten gelten eine Stunde und werden bei laufenden Sitzungen nach 30 Minuten erneuert. Vorübergehende Fehler bei der Erneuerung werden nach einer Minute erneut versucht. Ein Fehler beim erstmaligen Abruf lässt die Anmeldung kontrolliert scheitern, statt eine vermeintlich zuverlässige Sitzung ohne Relay zu starten.
 
 [Cloudflare-Anleitung](https://developers.cloudflare.com/realtime/turn/generate-credentials/)
 
@@ -50,17 +50,13 @@ turn:turn.example.com:3478?transport=udp,turns:turn.example.com:5349?transport=t
 
 Cloudflare-Konfiguration hat Vorrang vor coturn. STUN kann mit `ZWOICE_STUN_URLS` überschrieben werden. Der Signalisierungsdienst erstellt zeitlich begrenzte coturn-REST-Zugangsdaten mittels HMAC-SHA1 gemäß dem TURN-REST-Verfahren.
 
-## Einladungen ausgeben
+## Öffentlicher Zugang
 
-Mit demselben Server-Signierschlüssel in einer vertrauenswürdigen lokalen Umgebung:
+Die Desktop-App meldet Nutzer anhand ihrer frischen Sauce-`/self`-Position automatisch an. **Keine persönlichen Einladungen ausstellen.** `ZWOICE_SIGNING_KEY` ist für diesen Ablauf optional. Ein bestehender Schlüssel bleibt für ältere private Integrationen erhalten; er wird nicht in Desktop-Pakete eingebaut.
 
-```sh
-zwoice invite -athlete 123456 -group public -valid 720h
-```
+Die Startseite des Railway-Dienstes liefert die öffentliche Download-Seite. Pakete werden über GitHub Releases verteilt; das Go-Backend braucht dafür weder Download-Proxy noch Datenbank. Die Downloadlinks gehören zu v1.1.0 und müssen bei einer neuen Veröffentlichung gemeinsam mit den Release-Paketen aktualisiert werden.
 
-Das persönliche Token über einen geeigneten privaten Kanal an den Fahrer geben. Alle Teilnehmer derselben Gruppe können sich in räumlicher Nähe hören. Für eine private Ausfahrt einen anderen Gruppenwert verwenden. Einladungen sind Zugangskontrolle, keine kryptografische Bestätigung des Zwift-Kontobesitzes; der Betreiber muss die Zuordnung prüfen. Eine öffentliche Selbstregistrierung mit verifizierter Zwift-Identität setzt einen geeigneten Identitätsnachweis voraus.
-
-Schlüsselwechsel invalidiert sämtliche ausgestellten Einladungen und unterbricht laufende Sitzungen beim Deployment. Den Schlüssel gesichert halten. Das Serverprogramm protokolliert keine Tokens, SDP-Inhalte, Gesprächsinhalte oder Positionshistorien.
+Grenzen und Vertrauensmodell des kontolosen Zugangs stehen in [SECURITY.md](SECURITY.md). Bei einem Dienstneustart gehen laufende Sitzungen verloren und Clients verbinden sich erneut. Die globalen Anmeldelimits verteilen größere Wiederverbindungswellen zeitlich.
 
 ## Freigabe
 

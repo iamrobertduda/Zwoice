@@ -12,7 +12,7 @@ import (
 )
 
 // Permanent Cloudflare credentials stay in the signaling service. Each session
-// receives only ephemeral credentials, renewed after six of their twelve hours.
+// receives only ephemeral credentials, renewed after 30 minutes of their one-hour lifetime.
 func (h *Hub) fetchICE(ctx context.Context, id string) ([]map[string]any, error) {
 	if h.cfg.CloudflareKeyID == "" {
 		return h.iceServers(id, time.Now()), nil
@@ -20,7 +20,7 @@ func (h *Hub) fetchICE(ctx context.Context, id string) ([]map[string]any, error)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	endpoint := "https://rtc.live.cloudflare.com/v1/turn/keys/" + url.PathEscape(h.cfg.CloudflareKeyID) + "/credentials/generate-ice-servers"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(`{"ttl":43200}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(`{"ttl":3600}`))
 	if err != nil {
 		return nil, err
 	}

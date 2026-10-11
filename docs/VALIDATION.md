@@ -17,7 +17,7 @@ Stand: 11. Oktober 2026. Dieses Protokoll unterscheidet ausgeführte Prüfungen 
 
 Zusätzlich ist der [GitHub-Prüflauf für Commit 38636f6](https://github.com/iamrobertduda/Zwoice/actions/runs/38120994517) vollständig erfolgreich: Go-Tests mit Race Detector unter Windows, macOS und Linux, Chromium-Integrationstests unter Linux und Paketierung aller sechs Architekturen. Das ist eine Laufzeitprüfung des Go-Kerns auf drei Betriebssystemen, noch keine Prüfung physischer Audiogeräte dort.
 
-Der Cloud-Test verwendet synthetische Mikrofon-Audiodaten und Sauce-Positionsdaten nach dem untersuchten echten API-Schema. Er verwendet **echtes WebRTC, den produktiven Railway-Dienst und Cloudflare TURN**, aber keine reale Zwift-Fahrt und keine zwei verschiedenen Internetanschlüsse. Die simulierten Athleten verwenden eine isolierte Testgruppe und kurzlebige Einladungen. Dauerhafte Secrets werden dafür nur im Prozessspeicher gehalten; Browser-Traces sind im gehosteten Test deaktiviert.
+Der Cloud-Test verwendet synthetische Mikrofon-Audiodaten und Sauce-Positionsdaten nach dem untersuchten echten API-Schema. Er verwendet **echtes WebRTC, den produktiven Railway-Dienst und Cloudflare TURN**, aber keine reale Zwift-Fahrt und keine zwei verschiedenen Internetanschlüsse. Die aktuellen simulierten Athleten verwenden den öffentlichen Zugang und eine zufällige synthetische Event-Untergruppe, um keine realen Fahrten zu erreichen. Der Test benötigt keine Signierschlüssel; Browser-Traces sind im gehosteten Test deaktiviert.
 
 ## Ressourcenmessung
 
@@ -40,17 +40,21 @@ npx playwright install chromium
 npm run test:browser
 go test -run '^$' -bench BenchmarkThousandRiders -benchmem ./internal/proximity
 go run ./tests/load -clients 1000 -duration 90s
-node scripts/release.mjs 1.0.0
+node scripts/release.mjs 1.1.0
 ```
 
-Für einen kontrollierten gehosteten Test `ZWOICE_TEST_SERVER` und `ZWOICE_TEST_SIGNING_KEY` sicher als Prozessumgebung setzen und `npm run test:browser -- --grep 'two real'` ausführen. Der Schlüssel darf nicht in Shell-History, Repository, Testreports oder CI-Ausgaben geraten. Mit `ZWOICE_TEST_TURN_TLS=1` zusätzlich ausschließlich TURN/TLS erzwingen. Der Test nutzt die IDs 1001 und 1002; nicht parallel zu realen Nutzern mit diesen IDs ausführen.
+Für einen kontrollierten gehosteten Test nur `ZWOICE_TEST_SERVER` als Prozessumgebung setzen und `npm run test:browser -- --grep 'two real'` ausführen. Mit `ZWOICE_TEST_TURN_TLS=1` zusätzlich ausschließlich TURN/TLS erzwingen. Der Test nutzt die IDs 1001 und 1002; nicht parallel zu realen Nutzern mit diesen IDs ausführen.
 
 ## Noch erforderliche Freigabeprüfungen
 
 1. **Echtes Zwift + Sauce:** Zwei echte Fahrer in derselben Welt nebeneinander, auseinanderfahren, aufschließen; Eventwechsel, Teleport, Kamerawechsel und Ende einer Fahrt prüfen. Tatsächliche Positionsauflösung und Portal-/Instanztrennung bestätigen.
 2. **Audio und Netze:** Verständlichkeit mit Trainergeräusch und Headsets, unterschiedliche Internetanschlüsse/NATs, Paketverlust, WLAN-Wechsel, Mikrofon-/Ausgabegerätewechsel und Betrieb im Hintergrund prüfen.
-3. **Mehrstündiger Dauerbetrieb:** Mindestens acht Stunden mit Sprechpausen, wechselnden Gruppen und TURN-Erneuerung über sechs Stunden; CPU, RSS, Verbindungszahl und Audiogeräte beobachten. Ein 90-Sekunden-Lastlauf ersetzt das nicht.
+3. **Mehrstündiger Dauerbetrieb:** Mindestens acht Stunden mit Sprechpausen, wechselnden Gruppen und wiederholter TURN-Erneuerung; CPU, RSS, Verbindungszahl und Audiogeräte beobachten. Ein 90-Sekunden-Lastlauf ersetzt das nicht.
 4. **Betriebssysteme:** Windows AMD64/ARM64, macOS Intel/Apple Silicon und Linux mit realen Audiogeräten ausführen. Browser-Energiesparen und Mikrofonberechtigungen prüfen. Cross-Compilation allein ist kein Laufzeittest.
 5. **Distribution:** Für eine reibungsarme öffentliche Installation Apple Developer ID/Notarisierung und Windows-Code-Signing mit den Zertifikaten des Herausgebers einrichten. Diese Zugangsdaten liegen hier nicht vor.
 
 Eine uneingeschränkte Aussage „vollständig produktionsgeprüft auf allen Plattformen“ ist bis zum Abschluss dieser Prüfungen nicht gerechtfertigt.
+
+## Änderung v1.1.0: selbständiger Start
+
+Lokale Go-Race-Tests prüfen zusätzlich öffentliche Anmeldung, ungültige IDs, doppelte und gleichzeitig anlaufende Sitzungen, IP-Raten-/Kapazitätslimits, Erholung nach Ablauf sowie die Vertrauensgrenze für Proxy-Header. Browserprüfungen decken einen leeren ersten Start ohne Einladung/Name/Einstellungen, das Warten über den Watchdog-Zeitraum hinweg, automatischen Fahrtbeginn, fehlendes Sauce und das Entfernen alter gespeicherter Einladungen ab. Die öffentliche Download-Seite bietet je einen Windows-Installer und eine universelle macOS-DMG; Linux behält zwei Architekturarchive.

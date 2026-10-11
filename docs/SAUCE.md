@@ -23,7 +23,7 @@ Nach dem Öffnen des WebSockets sendet Zwoice:
       "event": "athlete/self/v2",
       "subId": 2,
       "source": "stats",
-      "options": { "resources": ["state"], "stats": false }
+      "options": { "resources": ["state", "athlete"], "stats": false }
     }
   }
 }
@@ -36,7 +36,8 @@ Sauce bestätigt als `type: response`. Ereignisse verwenden `type: event`, `uid:
 | Sauce-Feld | Bedeutung/Verarbeitung |
 | --- | --- |
 | `version` | Muss 2 sein. |
-| `self`, `athleteId` | Es muss die eigene Fahrerressource sein; die ID muss zur Einladung passen. |
+| `athlete.name`, `athlete.firstName`, `athlete.lastName` | Anzeigename automatisch übernehmen; leerer Name verhindert die Verbindung nicht. |
+| `self`, `athleteId` | Es muss die eigene Fahrerressource sein; die ID dient automatisch zur Anmeldung. |
 | `age` | Alter im Sauce-Prozess in Millisekunden; Daten älter als 3 s werden nicht übernommen. |
 | `state.worldTime` | Spiel-Zeitstempel; nur strikt neuere Werte aktualisieren eine Position. |
 | `state.x/y/z` | Zentimeter in der virtuellen Welt, durch 100 in Meter umgerechnet. |

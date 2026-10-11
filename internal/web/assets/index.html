@@ -59,6 +59,65 @@
               <span aria-hidden="true">＋</span> Fahrt starten
             </button>
           </section>
+          <section
+            class="setup-panel"
+            id="setupPanel"
+            aria-labelledby="setupTitle"
+            aria-live="polite"
+          >
+            <div class="setup-heading">
+              <span class="setup-symbol" id="setupSymbol" aria-hidden="true"
+                >↗</span
+              >
+              <div>
+                <div class="eyebrow">EINMAL KLICKEN. GEMEINSAM FAHREN.</div>
+                <h2 id="setupTitle">Wir schauen, ob deine Fahrt bereit ist.</h2>
+                <p id="setupDescription">
+                  Zwoice erkennt dich automatisch über Sauce. Kein Konto, kein
+                  Einladungscode.
+                </p>
+              </div>
+            </div>
+            <ol class="setup-progress" aria-label="Verbindungsstatus">
+              <li id="setupSauce">
+                <span aria-hidden="true">1</span> Sauce finden
+              </li>
+              <li id="setupRide">
+                <span aria-hidden="true">2</span> Fahrt erkennen
+              </li>
+              <li id="setupMic">
+                <span aria-hidden="true">3</span> Mikrofon freigeben
+              </li>
+            </ol>
+            <div id="sauceActions" class="setup-actions" hidden>
+              <a
+                href="https://www.sauce.llc/products/sauce4zwift/download"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="secondary-button"
+                >Sauce herunterladen ↗</a
+              >
+              <details>
+                <summary>Sauce läuft schon?</summary>
+                <p>
+                  Öffne in Sauce
+                  <strong>Einstellungen → Allgemein/General</strong> und schalte
+                  den Webserver ein. Zwoice erkennt die Verbindung automatisch.
+                </p>
+                <button
+                  type="button"
+                  class="text-button"
+                  id="connectionSettingsButton"
+                >
+                  Sauce auf einem anderen Computer?
+                </button>
+              </details>
+            </div>
+            <p class="setup-privacy">
+              Erst mit „Fahrt starten“ und deiner Mikrofonfreigabe wird der
+              Sprachchat aktiv.
+            </p>
+          </section>
           <div
             class="notice"
             id="notice"
@@ -234,7 +293,7 @@
         <div class="dialog-heading">
           <div>
             <div class="eyebrow">DEIN SETUP</div>
-            <h2>Bereit für die nächste Runde.</h2>
+            <h2>Dein Audio. Dein Tempo.</h2>
           </div>
           <button
             type="button"
@@ -246,50 +305,16 @@
           </button>
         </div>
         <p class="dialog-description">
-          Sauce und Zwift starten. Einmal verbinden. Gemeinsam losfahren.
+          Alles ist voreingestellt. Ändere hier nur, was du anders möchtest.
         </p>
         <label
-          >Anzeigename<input
+          >Anzeigename (optional)<input
             name="name"
             id="displayName"
             maxlength="32"
-            placeholder="Dein Name"
-            required
+            placeholder="Automatisch aus Zwift"
             autocomplete="nickname"
         /></label>
-        <div class="form-columns">
-          <label
-            >Sauce-Adresse<input
-              name="sauce"
-              id="sauceURL"
-              type="url"
-              value="http://127.0.0.1:1080"
-              required /></label
-          ><label
-            >Zwoice-Server<input
-              name="server"
-              id="serverURL"
-              type="url"
-              placeholder="https://zwoice-production.up.railway.app"
-              required
-          /></label>
-        </div>
-        <label
-          >Deine Einladung<input
-            name="token"
-            id="inviteToken"
-            type="password"
-            placeholder="Einladung für deine Zwift-ID"
-            required
-            autocomplete="off" /></label
-        ><label class="check-label"
-          ><input id="rememberInvite" type="checkbox" /> Einladung auf diesem
-          Gerät merken</label
-        >
-        <p class="field-note">
-          Deine Einladung wird nur auf Wunsch im Browser gespeichert. Teile sie
-          nicht mit anderen.
-        </p>
         <fieldset>
           <legend>Audio</legend>
           <label
@@ -312,9 +337,33 @@
             Leertaste (wenn dieses Fenster aktiv ist)</label
           ><label class="check-label"
             ><input type="checkbox" id="relayOnly" /> IP-Adresse vor anderen
-            Fahrern verbergen (benötigt TURN)</label
+            Fahrern verbergen</label
           >
         </fieldset>
+        <details class="advanced-settings" id="advancedSettings">
+          <summary>Erweitert · Verbindung</summary>
+          <p class="field-note">
+            Nur nötig, wenn Sauce auf einem anderen Computer läuft oder du einen
+            eigenen Zwoice-Server nutzt.
+          </p>
+          <div class="form-columns">
+            <label
+              >Sauce-Adresse<input
+                name="sauce"
+                id="sauceURL"
+                type="url"
+                value="http://127.0.0.1:1080"
+                required
+            /></label>
+            <label
+              >Zwoice-Server<input
+                name="server"
+                id="serverURL"
+                type="url"
+                placeholder="Automatisch"
+            /></label>
+          </div>
+        </details>
         <div class="dialog-actions">
           <button type="button" class="text-button" id="forgetButton">
             Gespeicherte Daten löschen</button
@@ -344,17 +393,17 @@
         <li>
           <strong>Zwoice verbinden</strong>
           <p>
-            Hinterlege Server und Einladung in den Einstellungen. Die Einladung
-            muss zu deiner Zwift-ID gehören. Gib beim Fahrtstart dein Mikrofon
-            frei.
+            Klicke auf „Fahrt starten“ und erlaube dein Mikrofon. Deinen Fahrer,
+            Namen und den Sprachserver erkennt Zwoice selbst. Du brauchst weder
+            eine Einladung noch ein zusätzliches Konto.
           </p>
         </li>
         <li>
           <strong>In Hörweite kommen</strong>
           <p>
-            Zwoice verbindet dich mit bis zu sechs Teilnehmern derselben
-            Einladungsgruppe, Welt und Event-Gruppe. Bis 10 Meter volle
-            Lautstärke, ab 60 Metern Stille.
+            Zwoice verbindet dich mit bis zu sechs anderen aktiven
+            Zwoice-Nutzern in derselben Welt und Event-Gruppe. Bis 10 Meter
+            volle Lautstärke, ab 60 Metern Stille.
           </p>
         </li>
       </ol>

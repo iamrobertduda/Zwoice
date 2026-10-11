@@ -67,10 +67,11 @@ func run() error {
 	var address string
 	switch mode {
 	case "server":
-		if len(key) < 32 {
-			return fmt.Errorf("ZWOICE_SIGNING_KEY must contain at least 32 bytes")
+		if len(key) != 0 && len(key) < 32 {
+			return fmt.Errorf("optional ZWOICE_SIGNING_KEY must contain at least 32 bytes")
 		}
 		cfg := broker.Config{Key: key, STUNURLs: splitEnv("ZWOICE_STUN_URLS"), TURNURLs: splitEnv("ZWOICE_TURN_URLS"), TURNSecret: os.Getenv("ZWOICE_TURN_SECRET"), CloudflareKeyID: os.Getenv("ZWOICE_CF_TURN_KEY_ID"), CloudflareAPIToken: os.Getenv("ZWOICE_CF_TURN_API_TOKEN")}
+		cfg.TrustRailwayProxy = os.Getenv("RAILWAY_PROJECT_ID") != ""
 		if len(cfg.STUNURLs) == 0 {
 			cfg.STUNURLs = []string{"stun:stun.cloudflare.com:3478"}
 		}

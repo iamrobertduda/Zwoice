@@ -20,6 +20,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/iamrobertduda/Zwoice/internal/auth"
 	"github.com/iamrobertduda/Zwoice/internal/proximity"
+	"github.com/iamrobertduda/Zwoice/internal/web"
 )
 
 type Config struct {
@@ -30,6 +31,7 @@ type Config struct {
 	TURNSecret         string
 	CloudflareKeyID    string
 	CloudflareAPIToken string
+	TrustRailwayProxy  bool
 }
 
 type Message struct {
@@ -55,19 +57,23 @@ type client struct {
 }
 
 type Hub struct {
-	mu      sync.Mutex
-	cfg     Config
-	clients map[string]*client
-	edges   map[proximity.Edge]bool
-	cells   map[proximity.Cell]map[string]struct{}
-	joining chan struct{}
+	mu          sync.Mutex
+	cfg         Config
+	clients     map[string]*client
+	edges       map[proximity.Edge]bool
+	cells       map[proximity.Cell]map[string]struct{}
+	joining     chan struct{}
+	admissions  map[string]*admission
+	pending     map[string]bool
+	joinTokens  float64
+	joinUpdated time.Time
 }
 
 func New(cfg Config) *Hub {
 	if cfg.MaxClients <= 0 {
 		cfg.MaxClients = 1000
 	}
-	return &Hub{cfg: cfg, clients: make(map[string]*client), edges: make(map[proximity.Edge]bool), cells: make(map[proximity.Cell]map[string]struct{}), joining: make(chan struct{}, 16)}
+	return &Hub{cfg: cfg, clients: make(map[string]*client), edges: make(map[proximity.Edge]bool), cells: make(map[proximity.Cell]map[string]struct{}), joining: make(chan struct{}, 16), admissions: make(map[string]*admission), pending: make(map[string]bool), joinTokens: 60, joinUpdated: time.Now()}
 }
 
 func (h *Hub) Handler() http.Handler {
@@ -77,6 +83,7 @@ func (h *Hub) Handler() http.Handler {
 		w.Write([]byte(`{"status":"ok","service":"zwoice","protocol":1}`))
 	})
 	mux.HandleFunc("GET /v1/session", h.session)
+	mux.Handle("GET /", web.DownloadHandler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -150,19 +157,37 @@ func (h *Hub) enqueue(c *client, value any) {
 }
 
 func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
-	// Only the local companion authenticates here, using an HTTP header. Tokens
-	// never appear in URLs, proxy access logs, or browser WebSocket protocols.
+	// The companion derives the public rider ID from Sauce /self. Optional
+	// signed invitations remain supported for private, operator-managed groups.
 	if r.Header.Get("Origin") != "" {
 		http.Error(w, "use the Zwoice companion", 403)
 		return
 	}
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	claims, err := auth.Verify(h.cfg.Key, token, time.Now())
+	claims, public, err := h.sessionClaims(r, time.Now())
 	if err != nil {
-		http.Error(w, "invalid or expired invitation", 401)
+		http.Error(w, "invalid session identity", 401)
+		return
+	}
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || r.Header.Get("Sec-WebSocket-Version") != "13" || r.Header.Get("Sec-WebSocket-Key") == "" {
+		http.Error(w, "websocket required", 400)
 		return
 	}
 	id := strconv.FormatInt(claims.AthleteID, 10)
+	admitted := false
+	if public {
+		ip := h.admissionIP(r)
+		h.mu.Lock()
+		status := h.reservePublic(ip, id, time.Now())
+		h.mu.Unlock()
+		if status != 0 {
+			if status == http.StatusTooManyRequests {
+				w.Header().Set("Retry-After", "15")
+			}
+			http.Error(w, "please retry shortly or close the other session", status)
+			return
+		}
+		defer func() { h.releasePublic(ip, id, !admitted) }()
+	}
 	h.mu.Lock()
 	_, exists := h.clients[id]
 	full := len(h.clients) >= h.cfg.MaxClients
@@ -198,6 +223,8 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 	c := &client{conn: conn, claims: claims, rider: proximity.Rider{ID: id, Cohort: claims.Cohort, Name: "Rider " + id}, out: make(chan any, 32)}
 	h.enqueue(c, map[string]any{"type": "welcome", "id": id, "iceServers": ice, "maxPeers": proximity.MaxPeers, "protocol": 1})
 	h.clients[id] = c
+	delete(h.pending, id)
+	admitted = true
 	h.mu.Unlock()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer func() {
@@ -214,7 +241,7 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		heartbeat := time.NewTicker(20 * time.Second)
 		defer heartbeat.Stop()
-		refresh := time.NewTimer(6 * time.Hour)
+		refresh := time.NewTimer(30 * time.Minute)
 		defer refresh.Stop()
 		for {
 			select {
@@ -241,7 +268,7 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				h.enqueue(c, map[string]any{"type": "ice", "iceServers": servers})
-				refresh.Reset(6 * time.Hour)
+				refresh.Reset(30 * time.Minute)
 			}
 		}
 	}()
@@ -363,7 +390,7 @@ func (h *Hub) iceServers(id string, now time.Time) []map[string]any {
 		servers = append(servers, map[string]any{"urls": h.cfg.STUNURLs})
 	}
 	if len(h.cfg.TURNURLs) > 0 && h.cfg.TURNSecret != "" {
-		username := fmt.Sprintf("%d:%s", now.Add(12*time.Hour).Unix(), id)
+		username := fmt.Sprintf("%d:%s", now.Add(time.Hour).Unix(), id)
 		mac := hmac.New(sha1.New, []byte(h.cfg.TURNSecret))
 		mac.Write([]byte(username))
 		servers = append(servers, map[string]any{"urls": h.cfg.TURNURLs, "username": username, "credential": base64.StdEncoding.EncodeToString(mac.Sum(nil))})

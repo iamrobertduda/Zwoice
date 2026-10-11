@@ -1,5 +1,8 @@
 import {
   mkdirSync,
+  cpSync,
+  rmSync,
+  symlinkSync,
   writeFileSync,
   copyFileSync,
   readFileSync,
@@ -78,8 +81,76 @@ for (const os of ["darwin", "windows", "linux"])
       `${name}: ${(statSync(binary).size / 1024 / 1024).toFixed(1)} MiB executable`,
     );
   }
+// One macOS download, regardless of Intel or Apple Silicon. Finder exposes
+// the usual app-to-Applications drag operation through the included symlink.
+if (process.platform === "darwin") {
+  const staging = join("dist", "macos-installer");
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  const app = join(staging, "Zwoice.app");
+  cpSync(join("dist", `zwoice-${version}-darwin-arm64`, "Zwoice.app"), app, {
+    recursive: true,
+  });
+  execFileSync("lipo", [
+    "-create",
+    join(
+      "dist",
+      `zwoice-${version}-darwin-arm64`,
+      "Zwoice.app",
+      "Contents",
+      "MacOS",
+      "zwoice",
+    ),
+    join(
+      "dist",
+      `zwoice-${version}-darwin-amd64`,
+      "Zwoice.app",
+      "Contents",
+      "MacOS",
+      "zwoice",
+    ),
+    "-output",
+    join(app, "Contents", "MacOS", "zwoice"),
+  ]);
+  execFileSync("codesign", [
+    "--force",
+    "--deep",
+    "--sign",
+    process.env.MACOS_SIGN_IDENTITY || "-",
+    app,
+  ]);
+  symlinkSync("/Applications", join(staging, "Applications"));
+  copyFileSync(
+    "THIRD_PARTY_NOTICES.md",
+    join(staging, "THIRD_PARTY_NOTICES.md"),
+  );
+  copyFileSync(
+    join("dist", `zwoice-${version}-darwin-arm64`, "GO-LICENSE.txt"),
+    join(staging, "GO-LICENSE.txt"),
+  );
+  execFileSync(
+    "hdiutil",
+    [
+      "create",
+      "-volname",
+      "Zwoice",
+      "-srcfolder",
+      staging,
+      "-ov",
+      "-format",
+      "UDZO",
+      join("dist", "Zwoice-macOS.dmg"),
+    ],
+    { stdio: "inherit" },
+  );
+}
 const checksums = readdirSync("dist")
-  .filter((n) => /\.(zip|gz)$/.test(n))
+  .filter(
+    (n) =>
+      (n.startsWith(`zwoice-${version}-`) && /\.(zip|gz)$/.test(n)) ||
+      n === "Zwoice-macOS.dmg" ||
+      n === "Zwoice-Windows-Setup.exe",
+  )
   .map(
     (n) =>
       `${createHash("sha256")

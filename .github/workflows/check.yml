@@ -54,4 +54,42 @@ jobs:
           path: |
             dist/*.zip
             dist/*.tar.gz
+            dist/*.dmg
             dist/SHA256SUMS
+
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: ./scripts/windows-installer.ps1 -Version 1.1.0
+      - name: Install, launch and uninstall without elevation
+        shell: pwsh
+        run: |
+          $installDir = "$env:RUNNER_TEMP\Zwoice-installed"
+          $p = Start-Process dist/Zwoice-Windows-Setup.exe -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=$installDir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer failed" }
+          $app = Start-Process "$installDir\Zwoice.exe" -ArgumentList "-open=false" -PassThru
+          try {
+            $healthy = $false
+            for ($i=0; $i -lt 20; $i++) {
+              try {
+                $health = Invoke-RestMethod http://127.0.0.1:8787/healthz
+                if ($health.service -eq "zwoice-desktop") { $healthy=$true; break }
+              } catch { Start-Sleep -Milliseconds 250 }
+            }
+            if (-not $healthy) { throw "Installed app did not start" }
+            Invoke-WebRequest -Method POST -Headers @{Origin="http://127.0.0.1:8787"} http://127.0.0.1:8787/api/quit | Out-Null
+            $app.WaitForExit(10000) | Out-Null
+          } finally {
+            if (-not $app.HasExited) { $app.Kill() }
+          }
+          $u = Start-Process "$installDir\unins000.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "Uninstall failed" }
+          if (Test-Path "$installDir\Zwoice.exe") { throw "Uninstall left executable behind" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zwoice-windows-installer
+          path: dist/Zwoice-Windows-Setup.exe

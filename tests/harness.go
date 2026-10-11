@@ -16,16 +16,17 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/iamrobertduda/Zwoice/internal/auth"
 	"github.com/iamrobertduda/Zwoice/internal/broker"
 	"github.com/iamrobertduda/Zwoice/internal/desktop"
 )
 
 type source struct {
 	mu        sync.Mutex
+	event     int64
 	id        int64
 	x         float64
 	course    int
+	riding    bool
 	frozen    bool
 	worldTime int64
 }
@@ -36,7 +37,14 @@ func (s *source) snapshot() any {
 	if !s.frozen {
 		s.worldTime = time.Now().UnixMilli()
 	}
-	return map[string]any{"version": 2, "athleteId": s.id, "self": true, "age": 0, "state": map[string]any{"x": s.x * 100, "y": 0, "z": 1000, "courseId": s.course, "eventSubgroupId": 0, "worldTime": s.worldTime, "sport": "cycling"}}
+	if !s.riding {
+		return map[string]any{"version": 2, "athleteId": s.id, "self": true, "age": 0}
+	}
+	name := "Flo Weber"
+	if s.id == 1002 {
+		name = "Emma Klein"
+	}
+	return map[string]any{"athlete": map[string]string{"name": name}, "version": 2, "athleteId": s.id, "self": true, "age": 0, "state": map[string]any{"x": s.x * 100, "y": 0, "z": 1000, "courseId": s.course, "eventSubgroupId": s.event, "worldTime": s.worldTime, "sport": "cycling"}}
 }
 func (s *source) handler() http.Handler {
 	mux := http.NewServeMux()
@@ -88,14 +96,8 @@ func serve(address string, h http.Handler) {
 func main() {
 	key := []byte(strings.Repeat("integration-test-only-", 3))
 	serverURL := "http://127.0.0.1:18089"
-	cohort := "test"
 	if hosted := os.Getenv("ZWOICE_TEST_SERVER"); hosted != "" {
-		key = []byte(os.Getenv("ZWOICE_TEST_SIGNING_KEY"))
-		if len(key) < 32 {
-			log.Fatal("Hosted test requires a signing key")
-		}
 		serverURL = hosted
-		cohort = fmt.Sprintf("validation-%d", time.Now().UnixNano())
 	}
 	var current atomic.Pointer[broker.Hub]
 	var cancel context.CancelFunc
@@ -114,16 +116,19 @@ func main() {
 	}
 	reset()
 	serve("127.0.0.1:18089", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { current.Load().Handler().ServeHTTP(w, r) }))
-	sources := map[string]*source{"1001": {id: 1001, course: 1}, "1002": {id: 1002, x: 8, course: 1}}
+	sources := map[string]*source{"1001": {id: 1001, course: 1, riding: true}, "1002": {id: 1002, x: 8, course: 1, riding: true}}
+	if os.Getenv("ZWOICE_TEST_SERVER") != "" {
+		// Isolate synthetic audio from real rides, without a private invitation.
+		event := time.Now().UnixMilli()
+		sources["1001"].event, sources["1002"].event = event, event
+	}
 	serve("127.0.0.1:11081", sources["1001"].handler())
 	serve("127.0.0.1:11082", sources["1002"].handler())
 	serve("127.0.0.1:18787", desktop.Handler("127.0.0.1:18787"))
 	serve("127.0.0.1:18788", desktop.Handler("127.0.0.1:18788"))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
-		id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
-		token, _ := auth.Sign(key, auth.Claims{AthleteID: id, Cohort: cohort, Expires: time.Now().Add(10 * time.Minute).Unix()})
-		json.NewEncoder(w).Encode(map[string]any{"server": serverURL, "token": token})
+		json.NewEncoder(w).Encode(map[string]any{"server": serverURL})
 	})
 	mux.HandleFunc("POST /move", func(w http.ResponseWriter, r *http.Request) {
 		s := sources[r.URL.Query().Get("id")]
@@ -138,6 +143,9 @@ func main() {
 		}
 		if v := r.URL.Query().Get("course"); v != "" {
 			s.course, _ = strconv.Atoi(v)
+		}
+		if v := r.URL.Query().Get("riding"); v != "" {
+			s.riding = v == "true"
 		}
 		if v := r.URL.Query().Get("frozen"); v != "" {
 			s.frozen = v == "true"

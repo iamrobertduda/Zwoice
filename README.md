@@ -8,12 +8,13 @@ Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandene
 
 ## Benutzen
 
-1. Paket für dein Betriebssystem entpacken und Zwoice starten. Die Oberfläche öffnet sich automatisch.
-2. Zwift und Sauce for Zwift starten; den Sauce-Webserver aktivieren.
-3. In Zwoice deinen Anzeigenamen, die Serveradresse und deine persönliche Einladung eintragen.
-4. **Fahrt starten**, Mikrofon freigeben und losfahren. Den Tab geöffnet lassen; Minimieren ist möglich.
+1. [Zwoice herunterladen](https://zwoice-production.up.railway.app/) und öffnen.
+2. Zwift und Sauce for Zwift starten.
+3. **Fahrt starten** anklicken und das Mikrofon erlauben.
 
-Eine Einladung bindet deine Sitzung an die von Sauce gemeldete eigene Zwift-ID. Der Betreiber erstellt sie mit `zwoice invite`. Teilnehmer einer Einladungsgruppe hören sich automatisch, sobald sie auch in derselben Zwift-Welt und Event-Gruppe unterwegs sind. Dafür sind weder Zwift-Passwörter noch ein Zwift-Kontozugriff durch Zwoice nötig.
+Kein Zwoice-Konto, kein Einladungscode, keine Eingabe von IDs oder Serveradressen. Zwoice übernimmt deinen Fahrer und Anzeigenamen automatisch aus Sauce und wartet auf deine Fahrt. Der Startbildschirm zeigt direkt, wenn Sauce oder die eigene Fahrt noch fehlt. Technische Optionen sind unter „Erweitert“ verborgen.
+
+Alle aktiven Zwoice-Nutzer in derselben Zwift-Welt, Event-Gruppe und Sportart können sich in räumlicher Nähe hören. Zwoice verlangt keine Zwift-Passwörter. Sauce und Zwift bleiben separate Anwendungen mit eigener Einrichtung. Die von Sauce gelieferte Identität ist keine kryptografisch verifizierte Zwift-Kontoinhaberschaft; siehe [Sicherheitsmodell](docs/SECURITY.md).
 
 Die **Demo** ist eine ausdrücklich gekennzeichnete Vorschau. Sie benötigt weder Sauce noch Mikrofon und überträgt keine Sprache.
 
@@ -42,17 +43,10 @@ Die Oberfläche liegt unter `http://127.0.0.1:8787`. Für einen zweiten lokalen 
 Lokaler Server in einem weiteren Terminal:
 
 ```sh
-export ZWOICE_SIGNING_KEY="$(openssl rand -hex 32)"
 go run ./cmd/zwoice server
 ```
 
-In derselben Umgebung mit demselben Schlüssel eine Einladung erstellen:
-
-```sh
-go run ./cmd/zwoice invite -athlete 123456 -group public -valid 720h
-```
-
-`123456` durch die echte eigene Zwift-ID ersetzen. Die Ausgabe ist ein persönliches Zugangstoken. Die Oberfläche erhält als Serveradresse `http://127.0.0.1:8080`; entfernte Server verlangen HTTPS. Ohne konfiguriertes TURN können restriktive Netzwerke keine Sprache verbinden.
+Für den lokalen Server unter Einstellungen → Erweitert `http://127.0.0.1:8080` verwenden. Entfernte Server verlangen HTTPS. Ohne konfiguriertes TURN können restriktive Netzwerke keine Sprache verbinden. Der öffentliche Betrieb benötigt keine Signierschlüssel oder vom Betreiber erzeugten Einladungen.
 
 ## Prüfen und Pakete bauen
 
@@ -63,12 +57,12 @@ npm ci
 npm test
 npx playwright install chromium
 npm run test:browser
-node scripts/release.mjs 1.0.0
+node scripts/release.mjs 1.1.0
 ```
 
 Node/Playwright werden ausschließlich für Entwicklung und Tests benötigt. Die Browser-Integrationstests starten zwei vollständige lokale Clients, einen echten Signalisierungsserver und eine kontrollierte Sauce-Quelle. Sie prüfen tatsächliche WebRTC-Audiopakete, Stummschaltung, Distanzänderung, Weltwechsel, veraltete Daten, Server-Neustart und Freigabe der Audiogeräte.
 
-Die Paketierung erzeugt Windows-, macOS- und Linux-Dateien für AMD64 und ARM64 sowie SHA-256-Prüfsummen. macOS-Pakete enthalten eine `.app`; ohne Entwicklerzertifikat ist ihre lokale Signatur keine Apple-Notarisierung. Windows-Pakete sind ohne bereitgestelltes Zertifikat unsigniert.
+Die Paketierung erzeugt sechs portable Pakete und auf macOS eine universelle DMG. `scripts/windows-installer.ps1` baut unter Windows einen Installer, der AMD64/ARM64 automatisch auswählt; CI prüft Installation, Programmstart und Deinstallation. SHA-256-Prüfsummen begleiten die Veröffentlichung. macOS-Pakete enthalten eine `.app`; ohne Entwicklerzertifikat ist ihre lokale Signatur keine Apple-Notarisierung. Windows-Pakete sind ohne bereitgestelltes Zertifikat unsigniert.
 
 ## Betrieb und technische Entscheidungen
 

@@ -22,7 +22,12 @@ type Athlete struct {
 	ID      int64    `json:"athleteId"`
 	Self    bool     `json:"self"`
 	Age     *float64 `json:"age"`
-	State   *struct {
+	Profile *struct {
+		Name      string `json:"name"`
+		FirstName string `json:"firstName"`
+		LastName  string `json:"lastName"`
+	} `json:"athlete"`
+	State *struct {
 		X         *float64 `json:"x"`
 		Y         *float64 `json:"y"`
 		Z         *float64 `json:"z"`
@@ -37,6 +42,7 @@ type Sample struct {
 	AthleteID int64              `json:"athleteId"`
 	Position  proximity.Position `json:"position"`
 	WorldTime int64              `json:"-"`
+	Name      string             `json:"name"`
 }
 
 func Normalize(a Athlete) (Sample, error) {
@@ -49,7 +55,14 @@ func Normalize(a Athlete) (Sample, error) {
 	if !p.Valid() {
 		return Sample{}, errors.New("ungültige Sauce-Position")
 	}
-	return Sample{a.ID, p, s.WorldTime}, nil
+	name := ""
+	if a.Profile != nil {
+		name = strings.TrimSpace(a.Profile.Name)
+		if name == "" {
+			name = strings.TrimSpace(a.Profile.FirstName + " " + a.Profile.LastName)
+		}
+	}
+	return Sample{AthleteID: a.ID, Position: p, WorldTime: s.WorldTime, Name: name}, nil
 }
 
 func ValidateURL(raw string) (*url.URL, error) {
@@ -106,7 +119,7 @@ func stream(ctx context.Context, base string, sample func(Sample)) error {
 	}
 	defer conn.CloseNow()
 	conn.SetReadLimit(256 * 1024)
-	request := map[string]any{"type": "request", "uid": 1, "data": map[string]any{"method": "subscribe", "arg": map[string]any{"event": "athlete/self/v2", "subId": 2, "source": "stats", "options": map[string]any{"resources": []string{"state"}, "stats": false}}}}
+	request := map[string]any{"type": "request", "uid": 1, "data": map[string]any{"method": "subscribe", "arg": map[string]any{"event": "athlete/self/v2", "subId": 2, "source": "stats", "options": map[string]any{"resources": []string{"state", "athlete"}, "stats": false}}}}
 	writeCtx, stop := context.WithTimeout(ctx, 3*time.Second)
 	err = wsjson.Write(writeCtx, conn, request)
 	stop()
@@ -121,17 +134,8 @@ func stream(ctx context.Context, base string, sample func(Sample)) error {
 		}
 	}
 	// Seed a newly opened session without waiting for the next game packet.
-	u, _ = ValidateURL(base)
-	u.Path = "/api/athlete/v2/self"
-	u.RawQuery = "resource=state"
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	if res, e := client.Do(req); e == nil {
-		var a Athlete
-		if res.StatusCode == http.StatusOK && json.NewDecoder(http.MaxBytesReader(nil, res.Body, 256*1024)).Decode(&a) == nil {
-			accept(a)
-		}
-		res.Body.Close()
+	if a, e := ReadSelf(ctx, base); e == nil {
+		accept(a)
 	}
 	for {
 		var env struct {
@@ -156,4 +160,31 @@ func stream(ctx context.Context, base string, sample func(Sample)) error {
 			}
 		}
 	}
+}
+
+// ReadSelf is a bounded readiness check; it does not open a voice session.
+func ReadSelf(ctx context.Context, base string) (Athlete, error) {
+	var a Athlete
+	u, err := ValidateURL(base)
+	if err != nil {
+		return a, err
+	}
+	u.Path = "/api/athlete/v2/self"
+	u.RawQuery = "resource=state&resource=athlete"
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := client.Do(req)
+	if err != nil {
+		return a, err
+	}
+	defer res.Body.Close()
+	// An empty /self (404) means Sauce is reachable but the ride has not begun.
+	if res.StatusCode == http.StatusNotFound {
+		return a, nil
+	}
+	if res.StatusCode != http.StatusOK {
+		return a, errors.New("Sauce-Webserver nicht verfügbar")
+	}
+	err = json.NewDecoder(http.MaxBytesReader(nil, res.Body, 256*1024)).Decode(&a)
+	return a, err
 }

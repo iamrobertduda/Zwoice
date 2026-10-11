@@ -20,7 +20,7 @@ Das spart eine separat gebündelte Browser-Engine. Der vorhandene Browser verbra
 
 ## Räumliche Auswahl
 
-Die Position wird in Meter normiert. Raumtrennung erfolgt nach Einladungsgruppe, Welt, Realm, Event-Untergruppe und Sport. Der Graph verwendet ein räumliches 3D-Raster mit 75-m-Zellen und betrachtet nur 27 Nachbarzellen. Die Paare werden nach Distanz sortiert; bestehende Paare bekommen eine 8-m-Präferenz gegen häufige Wechsel. Beide Endpunkte haben maximal sechs Kanten. Der Graph ist symmetrisch und bei gleichen Eingaben deterministisch.
+Die Position wird in Meter normiert. Raumtrennung erfolgt nach Gruppe (normalerweise `public`), Welt, Realm, Event-Untergruppe und Sport. Der Graph verwendet ein räumliches 3D-Raster mit 75-m-Zellen und betrachtet nur 27 Nachbarzellen. Die Paare werden nach Distanz sortiert; bestehende Paare bekommen eine 8-m-Präferenz gegen häufige Wechsel. Beide Endpunkte haben maximal sechs Kanten. Der Graph ist symmetrisch und bei gleichen Eingaben deterministisch.
 
 Vier Aktualisierungen pro Sekunde sind ein Kompromiss aus Reaktion und Ressourcenverbrauch. Die Quelle selbst ist der begrenzende Faktor: Zwoice verspricht keine schnelleren Positionen als Sauce liefert. Die Lautstärke nähert sich auf dem Audiothread mit einer 120-ms-Zeitkonstante an den Zielwert an. Der weiche Verlauf ist `1 - smoothstep(10 m, 60 m, distance)`.
 
@@ -39,7 +39,7 @@ Dies ist eine bewusste Kapazitätsgrenze, keine Behauptung unbegrenzter Skalieru
 
 ## Skalierung des Betriebs
 
-Eine Railway-Replik besitzt den Graphen. Das hält Betrieb und Kosten klein. Einfach mehr Repliken einzustellen wäre falsch: Bei zufälliger Verteilung könnten Nachbarn einander nicht finden. Für zusätzliche Kapazität sind explizite Shards nach Welt/Einladungsgruppe mit Routing der Teilnehmer und kontrollierter Übergabe beim Weltwechsel nötig. Ein gemeinsam erreichbarer Präsenzdienst könnte dafür ergänzt werden.
+Eine Railway-Replik besitzt den Graphen. Das hält Betrieb und Kosten klein. Einfach mehr Repliken einzustellen wäre falsch: Bei zufälliger Verteilung könnten Nachbarn einander nicht finden. Für zusätzliche Kapazität sind explizite Shards nach Welt/Gruppe mit Routing der Teilnehmer und kontrollierter Übergabe beim Weltwechsel nötig. Ein gemeinsam erreichbarer Präsenzdienst könnte dafür ergänzt werden.
 
 Für sehr große gleichzeitig hörbare Gruppen wäre ein SFU sinnvoll, der einen Audio-Uplink vervielfältigt. Ein Mesh mit begrenztem Grad ist für spontane kleine Gesprächsgruppen einfacher und spart dauerhaften Medienserver-Traffic. Die Grenze von sechs ist sichtbar; nicht jeder Fahrer in einem großen Feld hört jeden anderen. Das unterscheidet sich von einem klassischen unbegrenzten Sprachraum.
 
@@ -50,3 +50,7 @@ Sitzungen sind an die Lebensdauer des Browser-Tabs gebunden. Alle Tracks, Peer-V
 Ein einzelner Offerer pro Teilnehmerpaar verhindert Offer-Kollisionen. ICE-Kandidaten werden bis zur Remote Description begrenzt zwischengespeichert. Pro Peer werden asynchrone Signale serialisiert. Neue Peer-Listen können veraltete Verbindungen sofort entfernen.
 
 Cloudflare-/coturn-Zugangsdaten sind sitzungsbezogen und zeitlich begrenzt. Browser erhalten keine permanenten TURN- oder Signierschlüssel. Sprache nutzt DTLS-SRTP; der Signalisierungsserver hat keine Audioschlüssel.
+
+## Start ohne Einrichtung
+
+Beim Öffnen prüft der lokale Client alle drei Sekunden die voreingestellte Sauce-Adresse, solange keine Sprachsitzung läuft und der Tab sichtbar ist. Dabei werden weder Mikrofon noch TURN-Zugangsdaten angefordert. Nach „Fahrt starten“ erlaubt der Nutzer sein Mikrofon; der Companion wartet auf eine frische eigene Fahrerposition, liest ID und Name aus `state` und `athlete`, und öffnet die öffentliche Sprachsitzung. Ein Fahrerwechsel beendet die alte Sitzung und verbindet automatisch unter der neuen ID. Bei fehlender Quelle bleibt das Mikrofon für die Übertragung gesperrt. Der Vorbereitungs-Heartbeat verhindert unnötige Wiederverbindungen während des Wartens.
