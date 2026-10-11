@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#192522" />
+    <title>Zwoice — Gemeinsam in Hörweite</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="wordmark" href="/" aria-label="Zwoice Startseite"
+          ><span class="brand-mark" aria-hidden="true"
+            ><i></i><i></i><i></i><i></i></span
+          >zwoice<span class="brand-dot">.</span></a
+        >
+        <div class="sidebar-caption">GOOD RIDES. GREAT COMPANY.</div>
+        <nav aria-label="Hauptnavigation">
+          <button class="nav-item selected" id="rideNav">
+            <span class="nav-symbol">◉</span> Deine Ausfahrt
+            <span class="nav-count" id="navCount">0</span></button
+          ><button class="nav-item" id="settingsNav">
+            <span class="nav-symbol">≡</span> Einstellungen</button
+          ><button class="nav-item" id="helpNav">
+            <span class="nav-symbol">?</span> So funktioniert’s
+          </button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="tiny-label">WENIGER KLICKS. MEHR KILOMETER.</div>
+          <p>Einfach losfahren.<br />Der Rest ergibt sich.</p>
+          <div class="local-note">
+            <span class="status-dot"></span> Lokal auf deinem Gerät
+          </div>
+          <button class="quit-button" id="quitButton">Zwoice beenden</button>
+        </div>
+      </aside>
+      <main>
+        <header class="topbar">
+          <div class="breadcrumb">Deine Ausfahrt <span>/</span> Übersicht</div>
+          <div class="top-actions">
+            <span class="session-badge" id="sessionBadge"
+              ><span class="status-dot"></span> Bereit, wenn du es bist</span
+            ><button class="text-button" id="demoButton">
+              Demo erkunden <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+        </header>
+        <div class="main-content">
+          <section class="page-heading">
+            <div>
+              <div class="eyebrow">DEIN VIRTUELLES GRUPPETTO</div>
+              <h1>Zusammen in Hörweite<span>.</span></h1>
+              <p>Gute Gespräche beginnen neben dir.</p>
+            </div>
+            <button class="primary-button" id="connectButton">
+              <span aria-hidden="true">＋</span> Fahrt starten
+            </button>
+          </section>
+          <div
+            class="notice"
+            id="notice"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+          <div class="workspace">
+            <div class="main-column">
+              <section class="radar-panel" aria-label="Teilnehmer in Hörweite">
+                <div class="panel-heading">
+                  <div>
+                    <span class="live-dot" id="liveDot"></span>
+                    <h2>In deiner Nähe</h2>
+                  </div>
+                  <span class="small-tag" id="worldLabel"
+                    >Warte auf deine Fahrt</span
+                  >
+                </div>
+                <div class="radar" id="radar">
+                  <div class="radar-ring outer"></div>
+                  <div class="radar-ring middle"></div>
+                  <div class="radar-ring inner"></div>
+                  <div class="road"><div></div></div>
+                  <div class="range-label">60 m</div>
+                  <div class="radar-self">
+                    <div class="self-avatar">Du</div>
+                    <span id="selfLabel">Startklar</span>
+                  </div>
+                  <div id="radarPeers"></div>
+                  <div class="radar-caption" id="radarCaption">
+                    Dein nächstes Gespräch ist nur eine Radlänge entfernt.
+                  </div>
+                </div>
+                <div class="radar-footer">
+                  <span><span class="legend-dot"></span> Dein Hörradius</span
+                  ><span>Entfernung bestimmt die Lautstärke</span>
+                </div>
+              </section>
+              <section class="people-panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Dein Peloton</h2>
+                    <span class="count-badge" id="peerCount">0</span>
+                  </div>
+                  <span class="muted-text" id="peerLimit"
+                    >Bis zu 6 direkte Verbindungen</span
+                  >
+                </div>
+                <div id="peopleList">
+                  <div class="empty-state">
+                    <span class="empty-symbol">↗</span>
+                    <div>
+                      <h3>Hier ist Platz für Gesellschaft.</h3>
+                      <p>
+                        Starte deine Fahrt. Zwoice verbindet dich automatisch<br
+                          class="desktop-break"
+                        />
+                        mit anderen aktiven Fahrern in deiner Nähe.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+              <section class="demo-control" id="demoControl" hidden>
+                <label for="demoDistance"
+                  >Demo: Abstand zur Gruppe
+                  <output id="demoDistanceValue">0 m</output></label
+                ><input
+                  type="range"
+                  id="demoDistance"
+                  min="0"
+                  max="70"
+                  value="0"
+                />
+                <p>
+                  Simulierte Teilnehmer · kein Mikrofon und keine
+                  Sprachübertragung
+                </p>
+              </section>
+            </div>
+            <aside class="session-column">
+              <section class="audio-panel">
+                <div class="panel-heading">
+                  <h2>Dein Audio</h2>
+                  <span class="small-tag" id="audioBadge">Inaktiv</span>
+                </div>
+                <button
+                  class="mic-button"
+                  id="micButton"
+                  disabled
+                  aria-pressed="false"
+                >
+                  <span class="mic-glyph" aria-hidden="true"><i></i></span
+                  ><span id="micLabel">Mikrofon inaktiv</span
+                  ><small id="micHint">Wird beim Fahrtstart freigegeben</small>
+                </button>
+                <div class="audio-meter" aria-hidden="true">
+                  <div id="micMeter"></div>
+                </div>
+                <div class="volume-heading">
+                  <label for="volume">Lautstärke</label
+                  ><output id="volumeValue">80 %</output>
+                </div>
+                <input id="volume" type="range" min="0" max="100" value="80" />
+                <div class="audio-actions">
+                  <button
+                    id="deafenButton"
+                    class="secondary-button"
+                    aria-pressed="false"
+                  >
+                    Ton pausieren</button
+                  ><button
+                    id="audioSettingsButton"
+                    class="square-button"
+                    aria-label="Audio-Einstellungen"
+                  >
+                    ≡
+                  </button>
+                </div>
+              </section>
+              <section class="connection-panel">
+                <div class="panel-heading"><h2>Alles verbunden?</h2></div>
+                <div class="connection-row">
+                  <span class="connection-logo">S</span>
+                  <div>
+                    <strong>Sauce for Zwift</strong
+                    ><small id="sauceDetail">Wartet auf Verbindung</small>
+                  </div>
+                  <span class="connection-indicator" id="sauceIndicator"></span>
+                </div>
+                <div class="connection-row">
+                  <span class="connection-logo zwoice">z.</span>
+                  <div>
+                    <strong>Zwoice</strong
+                    ><small id="serverDetail">Noch nicht verbunden</small>
+                  </div>
+                  <span
+                    class="connection-indicator"
+                    id="serverIndicator"
+                  ></span>
+                </div>
+                <div class="latency-row">
+                  <span>Netzwerklatenz (RTT)</span
+                  ><strong id="latency">—</strong>
+                </div>
+              </section>
+              <section class="tip-panel">
+                <div class="tiny-label">WIE AUF DER STRASSE</div>
+                <h3>Näher dran.<br />Mehr zu erzählen.</h3>
+                <p>
+                  Neben dir ist die Stimme klar. Mit etwas Abstand wird sie
+                  leiser. Ganz automatisch.
+                </p>
+                <div class="distance-scale">
+                  <span>10 m <small>Klar & nah</small></span
+                  ><span>60 m <small>Leise ausgeblendet</small></span>
+                </div>
+              </section>
+            </aside>
+          </div>
+          <footer class="page-footer">
+            <span
+              ><span class="lock-dot" aria-hidden="true"></span> Verschlüsselte
+              Sprache. Keine Aufzeichnung.</span
+            ><span>Für die Kilometer dazwischen.</span>
+          </footer>
+        </div>
+      </main>
+    </div>
+    <dialog id="settingsDialog">
+      <form id="settingsForm">
+        <div class="dialog-heading">
+          <div>
+            <div class="eyebrow">DEIN SETUP</div>
+            <h2>Bereit für die nächste Runde.</h2>
+          </div>
+          <button
+            type="button"
+            class="square-button"
+            data-close="settingsDialog"
+            aria-label="Schließen"
+          >
+            ×
+          </button>
+        </div>
+        <p class="dialog-description">
+          Sauce und Zwift starten. Einmal verbinden. Gemeinsam losfahren.
+        </p>
+        <label
+          >Anzeigename<input
+            name="name"
+            id="displayName"
+            maxlength="32"
+            placeholder="Dein Name"
+            required
+            autocomplete="nickname"
+        /></label>
+        <div class="form-columns">
+          <label
+            >Sauce-Adresse<input
+              name="sauce"
+              id="sauceURL"
+              type="url"
+              value="http://127.0.0.1:1080"
+              required /></label
+          ><label
+            >Zwoice-Server<input
+              name="server"
+              id="serverURL"
+              type="url"
+              placeholder="https://zwoice-production.up.railway.app"
+              required
+          /></label>
+        </div>
+        <label
+          >Deine Einladung<input
+            name="token"
+            id="inviteToken"
+            type="password"
+            placeholder="Einladung für deine Zwift-ID"
+            required
+            autocomplete="off" /></label
+        ><label class="check-label"
+          ><input id="rememberInvite" type="checkbox" /> Einladung auf diesem
+          Gerät merken</label
+        >
+        <p class="field-note">
+          Deine Einladung wird nur auf Wunsch im Browser gespeichert. Teile sie
+          nicht mit anderen.
+        </p>
+        <fieldset>
+          <legend>Audio</legend>
+          <label
+            >Mikrofon<select id="inputDevice">
+              <option value="">Systemstandard</option>
+            </select></label
+          ><label
+            >Ausgabe<select id="outputDevice">
+              <option value="">Systemstandard</option>
+            </select></label
+          >
+          <p class="field-note" id="outputHelp">
+            Weitere Geräte erscheinen nach der Mikrofonfreigabe.
+          </p>
+          <label class="check-label"
+            ><input type="checkbox" id="noiseSuppression" checked />
+            Hintergrundgeräusche reduzieren</label
+          ><label class="check-label"
+            ><input type="checkbox" id="pushToTalk" /> Push-to-talk mit der
+            Leertaste (wenn dieses Fenster aktiv ist)</label
+          ><label class="check-label"
+            ><input type="checkbox" id="relayOnly" /> IP-Adresse vor anderen
+            Fahrern verbergen (benötigt TURN)</label
+          >
+        </fieldset>
+        <div class="dialog-actions">
+          <button type="button" class="text-button" id="forgetButton">
+            Gespeicherte Daten löschen</button
+          ><button type="submit" class="primary-button">Speichern</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="helpDialog">
+      <div class="dialog-heading">
+        <h2>Losfahren. Dazugehören.</h2>
+        <button
+          class="square-button"
+          data-close="helpDialog"
+          aria-label="Schließen"
+        >
+          ×
+        </button>
+      </div>
+      <ol class="help-steps">
+        <li>
+          <strong>Zwift und Sauce starten</strong>
+          <p>
+            Sauce muss deine eigene Fahrt beobachten. Aktiviere den lokalen
+            Webserver in Sauce (normalerweise Port 1080).
+          </p>
+        </li>
+        <li>
+          <strong>Zwoice verbinden</strong>
+          <p>
+            Hinterlege Server und Einladung in den Einstellungen. Die Einladung
+            muss zu deiner Zwift-ID gehören. Gib beim Fahrtstart dein Mikrofon
+            frei.
+          </p>
+        </li>
+        <li>
+          <strong>In Hörweite kommen</strong>
+          <p>
+            Zwoice verbindet dich mit bis zu sechs Teilnehmern derselben
+            Einladungsgruppe, Welt und Event-Gruppe. Bis 10 Meter volle
+            Lautstärke, ab 60 Metern Stille.
+          </p>
+        </li>
+      </ol>
+      <p class="help-note">
+        Du kannst den Browser minimieren. Lass den Tab geöffnet und nimm Zwoice
+        von Energiespar- oder Tab-Schlaffunktionen aus. Bei fehlenden
+        Positionsdaten oder Verbindungsabbruch pausiert die Sprache automatisch.
+        Push-to-talk benötigt Fensterfokus.
+      </p>
+      <p class="help-note">
+        Zwoice ist unabhängig von Zwift und Sauce. Die Näherungsansicht zeigt
+        Entfernungen, keine exakten Fahrtrichtungen. Direkte Verbindungen können
+        deine IP-Adresse gegenüber Gesprächspartnern offenlegen; „IP-Adresse
+        verbergen“ erzwingt TURN.
+      </p>
+    </dialog>
+  </body>
+</html>

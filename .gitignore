@@ -1,0 +1,13 @@
+/dist/
+/zwoice
+/node_modules/
+/test-results/
+/playwright-report/
+/coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
+.DS_Store
