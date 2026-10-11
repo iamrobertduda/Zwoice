@@ -68,6 +68,7 @@ func Handler(host string, shutdown ...func()) http.Handler {
 		go shutdown[0]()
 	})
 	mux.HandleFunc("POST /api/setup", setup)
+	mux.HandleFunc("POST /api/account/", accountProxy)
 	mux.Handle("GET /", web.Handler())
 	mux.HandleFunc("GET /api/session", func(w http.ResponseWriter, r *http.Request) {
 		if !active.CompareAndSwap(false, true) {
@@ -105,6 +106,17 @@ func Handler(host string, shutdown ...func()) http.Handler {
 		remoteURL, err := BrokerURL(start.Server)
 		if err != nil {
 			fail(err.Error())
+			return
+		}
+		base, _ := accountBase(start.Server)
+		token := sessionToken(r, base)
+		if token == "" {
+			write(map[string]any{"type": "error", "fatal": true, "loginRequired": true, "message": "Bitte melde dich zuerst bei Zwoice an."})
+			return
+		}
+		_, status, loginErr := accountCall(ctx, base, "/v1/auth/me", token, []byte(`{}`))
+		if loginErr != nil || status != 200 {
+			write(map[string]any{"type": "error", "fatal": status == 401 || status == 403, "loginRequired": status == 401 || status == 403, "message": "Deine Anmeldung konnte nicht bestätigt werden. Bitte melde dich erneut an oder prüfe deine Verbindung."})
 			return
 		}
 		if _, err = sauce.ValidateURL(start.Sauce); err != nil {
@@ -181,12 +193,15 @@ func Handler(host string, shutdown ...func()) http.Handler {
 		}
 		write(map[string]any{"type": "setup", "state": "connecting", "name": first.Name, "message": "Fahrt erkannt. Verbinde deinen Sprachchat …"})
 		c, s = context.WithTimeout(ctx, 8*time.Second)
-		remote, res, err := websocket.Dial(c, remoteURL.String(), &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-ID": []string{strconv.FormatInt(first.AthleteID, 10)}}})
+		remote, res, err := websocket.Dial(c, remoteURL.String(), &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-ID": []string{strconv.FormatInt(first.AthleteID, 10)}, "Authorization": []string{"Bearer " + token}}})
 		s()
 		if err != nil {
 			message := "Sprachserver nicht erreichbar. Adresse und Verbindung prüfen."
 			if res != nil && res.StatusCode == 401 {
-				message = "Diese Zwoice-Version wird vom Server nicht unterstützt. Bitte die aktuelle Version installieren."
+				message = "Deine Anmeldung ist abgelaufen. Bitte melde dich erneut an."
+			}
+			if res != nil && res.StatusCode == 403 {
+				message = "Sprachchat ist für dein Konto gesperrt oder dein Tageslimit ist erreicht. Bitte wende dich an den Betreiber."
 			}
 			if res != nil && res.StatusCode == 409 {
 				message = "Deine Fahrt ist bereits in einem anderen Zwoice-Fenster verbunden. Schließe das andere Fenster."
@@ -201,7 +216,7 @@ func Handler(host string, shutdown ...func()) http.Handler {
 			if res != nil && res.StatusCode == 429 {
 				retryAfter = 15
 			}
-			write(map[string]any{"type": "error", "fatal": res != nil && res.StatusCode == 401, "retryAfter": retryAfter, "message": message})
+			write(map[string]any{"type": "error", "fatal": res != nil && (res.StatusCode == 401 || res.StatusCode == 403), "loginRequired": res != nil && res.StatusCode == 401, "retryAfter": retryAfter, "message": message})
 			return
 		}
 		defer remote.CloseNow()

@@ -1,6 +1,8 @@
 # Mit Zwoice losfahren
 
-[Zwoice herunterladen](https://zwoice-production.up.railway.app/), öffnen, **Fahrt starten** anklicken und das Mikrofon erlauben. Kein zusätzliches Konto, keine Einladung und keine manuelle Zwift-ID.
+[Zwoice herunterladen](https://zwoice-production.up.railway.app/), öffnen und **Anmelden & losfahren** anklicken. E-Mail eingeben und den achtstelligen Code aus dem Postfach bestätigen. Beim ersten Mal entsteht dein Konto automatisch. Anschließend **Fahrt starten** anklicken und das Mikrofon erlauben. Keine Einladung und keine manuelle Zwift-ID.
+
+Mit „Auf diesem Gerät angemeldet bleiben“ gilt die Anmeldung 30 Tage. Ohne diese Option endet sie spätestens nach zwölf Stunden. Unter **Dein Konto → Abmelden** kannst du sie jederzeit beenden. Sprache und TURN funktionieren ausschließlich mit gültiger Anmeldung.
 
 Zwift und **Sauce for Zwift** müssen laufen. Sauce braucht einen aktiven Webserver; dieser ist normalerweise bereits eingeschaltet. Zwoice zeigt direkt an, was noch fehlt, und wartet auf deine Fahrt. Sobald sie beginnt, geht es automatisch weiter. Die erstmalige Konto-/Beobachter-Einrichtung von Sauce bleibt in Sauce; Zwoice kann sie nicht übernehmen.
 
@@ -41,4 +43,4 @@ Unter **Einstellungen** kannst du Audio-Geräte auswählen, einen abweichenden A
 | Fahrer bereits verbunden | Das andere Zwoice-Fenster schließen; die Verbindung wird automatisch erneut versucht. |
 | Keine Sprachpartner | Andere müssen Zwoice aktiv nutzen und in derselben Welt, Event-Untergruppe und Sportart in deiner Nähe fahren. |
 
-„Gespeicherte Daten löschen“ entfernt Einstellungen und persönliche Stummschaltungen. Alte gespeicherte Einladungen werden beim Upgrade automatisch entfernt. Browser-Mikrofonberechtigungen verwaltet der Browser separat.
+„Gespeicherte Daten löschen“ meldet dich ab und entfernt Einstellungen und persönliche Stummschaltungen. Dein Konto auf dem Server bleibt erhalten. Alte gespeicherte Einladungen werden beim Upgrade automatisch entfernt. Browser-Mikrofonberechtigungen verwaltet der Browser separat.

@@ -1513,3 +1513,38 @@
     }
   }
 }
+@layer components {
+  .auth-actions {
+    margin-top: 24px;
+  }
+  #loginCode {
+    font-size: 26px;
+    letter-spacing: 5px;
+  }
+  .account-email {
+    margin-top: 24px;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+  #adminDialog {
+    width: min(760px, calc(100% - 28px));
+  }
+  .account-row {
+    border-top: 1px solid var(--line);
+    padding: 24px 0;
+  }
+  .account-row > strong {
+    overflow-wrap: anywhere;
+  }
+  .account-row input[type="number"] {
+    max-width: 130px;
+  }
+  .account-row button {
+    margin-top: 18px;
+  }
+  @media (max-width: 600px) {
+    .auth-actions {
+      flex-wrap: wrap;
+    }
+  }
+}

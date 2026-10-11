@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -16,19 +18,35 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/iamrobertduda/Zwoice/internal/auth"
+	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/broker"
 	"github.com/iamrobertduda/Zwoice/internal/proximity"
 )
 
+type mailbox struct{ code string }
+
+func (m *mailbox) SendLogin(_ context.Context, _ string, code, _ string) error {
+	m.code = code
+	return nil
+}
 func main() {
 	count := flag.Int("clients", 1000, "number of synthetic clients")
 	duration := flag.Duration("duration", time.Minute, "steady-state duration")
 	flag.Parse()
-	key := []byte(strings.Repeat("load-test-only", 4))
+	dir, err := os.MkdirTemp("", "zwoice-load-")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	mail := &mailbox{}
+	store, err := accounts.Open(accounts.Config{Path: filepath.Join(dir, "accounts.db"), Mailer: mail, DailyEmailLimit: 10000})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer store.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	h := broker.New(broker.Config{Key: key, MaxClients: *count})
+	h := broker.New(broker.Config{Accounts: store, MaxClients: *count, TrustRailwayProxy: true})
 	go h.Run(ctx)
 	server := httptest.NewServer(h.Handler())
 	defer server.Close()
@@ -39,8 +57,19 @@ func main() {
 	connections := make([]*websocket.Conn, 0, *count)
 	for i := 0; i < *count; i++ {
 		id := int64(i + 1)
-		token, _ := auth.Sign(key, auth.Claims{AthleteID: id, Cohort: "load", Expires: time.Now().Add(time.Hour).Unix()})
-		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/v1/session", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}}})
+		// Respect the production global admission budget during ramp-up.
+		if i >= 50 {
+			time.Sleep(510 * time.Millisecond)
+		}
+		challenge, err := store.RequestCode(ctx, fmt.Sprintf("load-%d@example.test", i))
+		if err != nil {
+			log.Fatal(err)
+		}
+		token, _, _, err := store.VerifyCode(challenge, mail.code, false)
+		if err != nil {
+			log.Fatal(err)
+		}
+		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/v1/session", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}, "Zwoice-Athlete-ID": []string{fmt.Sprint(id)}, "X-Real-IP": []string{fmt.Sprintf("10.%d.%d.%d", i/65536, (i/256)%256, i%256)}}})
 		if err != nil {
 			log.Fatal(err)
 		}

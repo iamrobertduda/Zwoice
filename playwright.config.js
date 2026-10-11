@@ -12,13 +12,13 @@ export default defineConfig({
         "--use-fake-ui-for-media-stream",
       ],
     },
-    screenshot: process.env.ZWOICE_TEST_SERVER ? "off" : "only-on-failure",
-    trace: process.env.ZWOICE_TEST_SERVER ? "off" : "retain-on-failure",
+    screenshot: process.env.ZWOICE_TEST_CF_KEY ? "off" : "only-on-failure",
+    trace: process.env.ZWOICE_TEST_CF_KEY ? "off" : "retain-on-failure",
   },
   webServer: {
     command: "go run ./tests/harness.go",
     url: "http://127.0.0.1:18787",
-    reuseExistingServer: !process.env.CI && !process.env.ZWOICE_TEST_SERVER,
+    reuseExistingServer: !process.env.CI && !process.env.ZWOICE_TEST_CF_KEY,
     timeout: 120000,
   },
 });

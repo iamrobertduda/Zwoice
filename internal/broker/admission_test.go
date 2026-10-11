@@ -13,15 +13,16 @@ import (
 	"github.com/coder/websocket/wsjson"
 )
 
-func TestPublicJoinAndDuplicate(t *testing.T) {
-	hub := New(Config{})
+func TestAccountJoinAndDuplicate(t *testing.T) {
+	store, token, _ := accountFixture(t)
+	hub := New(Config{Accounts: store})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go hub.Run(ctx)
 	server := httptest.NewServer(hub.Handler())
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/session"
-	opts := &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-Id": []string{"123"}}}
+	opts := &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-Id": []string{"123"}, "Authorization": []string{"Bearer " + token}}}
 	c, _, err := websocket.Dial(ctx, url, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -38,13 +39,21 @@ func TestPublicJoinAndDuplicate(t *testing.T) {
 	if err == nil || res.StatusCode != 409 {
 		t.Fatal("duplicate accepted")
 	}
+	opts.HTTPHeader.Set("Zwoice-Athlete-ID", "124")
+	duplicate, res, err = websocket.Dial(ctx, url, opts)
+	if duplicate != nil {
+		duplicate.CloseNow()
+	}
+	if err == nil || res.StatusCode != 409 {
+		t.Fatal("same account connected twice with different athlete IDs")
+	}
 	for _, id := range []string{"0", "-1", "abc", "9007199254740992"} {
 		opts.HTTPHeader.Set("Zwoice-Athlete-ID", id)
 		conn, res, err := websocket.Dial(ctx, url, opts)
 		if conn != nil {
 			conn.CloseNow()
 		}
-		if err == nil || res.StatusCode != 401 {
+		if err == nil || res.StatusCode != 400 {
 			t.Fatal("invalid ID accepted", id)
 		}
 	}

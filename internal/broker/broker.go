@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -16,14 +17,19 @@ import (
 	"time"
 	"unicode"
 
+	"crypto/rand"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/auth"
 	"github.com/iamrobertduda/Zwoice/internal/proximity"
 	"github.com/iamrobertduda/Zwoice/internal/web"
 )
 
 type Config struct {
+	Accounts     *accounts.Store
+	TURNEndpoint string // Optional transport override for controlled tests.
+
 	Key                []byte
 	MaxClients         int
 	STUNURLs           []string
@@ -44,6 +50,11 @@ type Message struct {
 }
 
 type client struct {
+	sessionToken string
+	accountID    string
+	connectionID string
+	checkedAt    time.Time
+
 	conn         *websocket.Conn
 	claims       auth.Claims
 	rider        proximity.Rider
@@ -57,6 +68,9 @@ type client struct {
 }
 
 type Hub struct {
+	authBudget         authBudget
+	accountConnections map[string]string
+
 	mu          sync.Mutex
 	cfg         Config
 	clients     map[string]*client
@@ -73,7 +87,7 @@ func New(cfg Config) *Hub {
 	if cfg.MaxClients <= 0 {
 		cfg.MaxClients = 1000
 	}
-	return &Hub{cfg: cfg, clients: make(map[string]*client), edges: make(map[proximity.Edge]bool), cells: make(map[proximity.Cell]map[string]struct{}), joining: make(chan struct{}, 16), admissions: make(map[string]*admission), pending: make(map[string]bool), joinTokens: 60, joinUpdated: time.Now()}
+	return &Hub{cfg: cfg, accountConnections: make(map[string]string), clients: make(map[string]*client), edges: make(map[proximity.Edge]bool), cells: make(map[proximity.Cell]map[string]struct{}), joining: make(chan struct{}, 16), admissions: make(map[string]*admission), pending: make(map[string]bool), joinTokens: 60, joinUpdated: time.Now()}
 }
 
 func (h *Hub) Handler() http.Handler {
@@ -83,6 +97,8 @@ func (h *Hub) Handler() http.Handler {
 		w.Write([]byte(`{"status":"ok","service":"zwoice","protocol":1}`))
 	})
 	mux.HandleFunc("GET /v1/session", h.session)
+	mux.HandleFunc("POST /v1/auth/", h.accountHandler)
+	mux.HandleFunc("POST /v1/admin/", h.accountHandler)
 	mux.Handle("GET /", web.DownloadHandler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -92,6 +108,9 @@ func (h *Hub) Handler() http.Handler {
 }
 
 func (h *Hub) Run(ctx context.Context) {
+	if h.cfg.Accounts != nil {
+		go h.revokeLoop(ctx)
+	}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	defer func() {
@@ -123,6 +142,17 @@ func (h *Hub) tick(now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for id, c := range h.clients {
+		if h.cfg.Accounts != nil && now.Sub(c.checkedAt) >= 2*time.Second {
+			c.checkedAt = now
+			a, _, err := h.cfg.Accounts.Authenticate(c.sessionToken)
+			policy, policyErr := h.cfg.Accounts.Policy()
+			if err != nil || policyErr != nil || !a.TURNAllowed || !policy.TURNEnabled {
+				c.conn.CloseNow()
+				h.removeCell(c)
+				delete(h.clients, id)
+				continue
+			}
+		}
 		if now.Sub(c.rider.Updated) >= proximity.StaleAfter {
 			h.removeCell(c)
 		}
@@ -157,24 +187,52 @@ func (h *Hub) enqueue(c *client, value any) {
 }
 
 func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
-	// The companion derives the public rider ID from Sauce /self. Optional
-	// signed invitations remain supported for private, operator-managed groups.
+	// No anonymous or invitation fallback: every voice session needs a valid
+	// email-verified account before any TURN credential can be generated.
 	if r.Header.Get("Origin") != "" {
 		http.Error(w, "use the Zwoice companion", 403)
 		return
 	}
-	claims, public, err := h.sessionClaims(r, time.Now())
-	if err != nil {
-		http.Error(w, "invalid session identity", 401)
+	if h.cfg.Accounts == nil {
+		http.Error(w, "login required", 401)
 		return
 	}
+	sessionToken := bearer(r)
+	account, login, err := h.cfg.Accounts.Authenticate(sessionToken)
+	if err != nil {
+		accountError(w, err)
+		return
+	}
+	athleteID, err := strconv.ParseInt(r.Header.Get("Zwoice-Athlete-ID"), 10, 64)
+	if err != nil || athleteID <= 0 || athleteID > 9007199254740991 {
+		http.Error(w, "invalid athlete", 400)
+		return
+	}
+	claims := auth.Claims{AthleteID: athleteID, Cohort: "public", Expires: login.Expires}
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || r.Header.Get("Sec-WebSocket-Version") != "13" || r.Header.Get("Sec-WebSocket-Key") == "" {
 		http.Error(w, "websocket required", 400)
 		return
 	}
 	id := strconv.FormatInt(claims.AthleteID, 10)
 	admitted := false
-	if public {
+	connectionID := rand.Text()
+	h.mu.Lock()
+	if _, exists := h.accountConnections[account.ID]; exists {
+		h.mu.Unlock()
+		http.Error(w, "account already connected", 409)
+		return
+	}
+	h.accountConnections[account.ID] = connectionID
+	h.mu.Unlock()
+	defer func() {
+		_ = h.cfg.Accounts.RevokeConnection(connectionID)
+		h.mu.Lock()
+		if h.accountConnections[account.ID] == connectionID {
+			delete(h.accountConnections, account.ID)
+		}
+		h.mu.Unlock()
+	}()
+	{
 		ip := h.admissionIP(r)
 		h.mu.Lock()
 		status := h.reservePublic(ip, id, time.Now())
@@ -202,10 +260,19 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "please retry shortly", 503)
 		return
 	}
-	ice, err := h.fetchICE(r.Context(), id)
+	ice, err := h.fetchICE(r.Context(), id, sessionToken, connectionID)
 	<-h.joining
 	if err != nil {
-		http.Error(w, "TURN service unavailable", 503)
+		if errors.Is(err, accounts.ErrUnauthorized) || errors.Is(err, accounts.ErrTURN) || errors.Is(err, accounts.ErrDisabled) {
+			accountError(w, err)
+		} else {
+			http.Error(w, "TURN service unavailable", 503)
+		}
+		return
+	}
+	// Recheck after the external request; logout/blocking may have raced it.
+	if _, _, err = h.cfg.Accounts.Authenticate(sessionToken); err != nil {
+		accountError(w, err)
 		return
 	}
 	h.mu.Lock()
@@ -220,16 +287,20 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn.SetReadLimit(24 * 1024)
-	c := &client{conn: conn, claims: claims, rider: proximity.Rider{ID: id, Cohort: claims.Cohort, Name: "Rider " + id}, out: make(chan any, 32)}
+	c := &client{sessionToken: sessionToken, accountID: account.ID, connectionID: connectionID, checkedAt: time.Now(), conn: conn, claims: claims, rider: proximity.Rider{ID: id, Cohort: claims.Cohort, Name: "Rider " + id}, out: make(chan any, 32)}
 	h.enqueue(c, map[string]any{"type": "welcome", "id": id, "iceServers": ice, "maxPeers": proximity.MaxPeers, "protocol": 1})
 	h.clients[id] = c
 	delete(h.pending, id)
 	admitted = true
 	h.mu.Unlock()
 	ctx, cancel := context.WithCancel(r.Context())
+	writerDone := make(chan struct{})
 	defer func() {
 		cancel()
 		conn.CloseNow()
+		// A refresh may still be finishing its provider request. Do not mark
+		// this connection's grants until its last issuance has finished.
+		<-writerDone
 		h.mu.Lock()
 		if h.clients[id] == c {
 			h.removeCell(c)
@@ -238,6 +309,7 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 	}()
 	go func() {
+		defer close(writerDone)
 		defer cancel()
 		heartbeat := time.NewTicker(20 * time.Second)
 		defer heartbeat.Stop()
@@ -262,8 +334,11 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-refresh.C:
-				servers, err := h.fetchICE(ctx, id)
+				servers, err := h.fetchICE(ctx, id, sessionToken, connectionID)
 				if err != nil {
+					if errors.Is(err, accounts.ErrUnauthorized) || errors.Is(err, accounts.ErrTURN) || errors.Is(err, accounts.ErrDisabled) {
+						return
+					}
 					refresh.Reset(time.Minute)
 					continue
 				}

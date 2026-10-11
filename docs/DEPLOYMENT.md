@@ -2,7 +2,7 @@
 
 ## Aufteilung
 
-Railway betreibt den Go-Signalisierungsdienst über HTTPS/WebSocket. Audio geht direkt zwischen den Teilnehmern oder über Cloudflare Realtime TURN. Railway benötigt keine Audio-UDP-Ports, keine Datenbank, kein Redis und kein persistentes Volume.
+Railway betreibt den Go-Signalisierungsdienst über HTTPS/WebSocket. Audio geht direkt zwischen den Teilnehmern oder über Cloudflare Realtime TURN. Railway braucht keine Audio-UDP-Ports und keinen separaten Datenbank- oder Redis-Dienst. Verifizierte Konten, Sitzungen und Zugangsregeln liegen in einer kleinen bbolt-Datei auf einem persistenten Volume (`/data`).
 
 Die öffentliche Railway-Netzwerkschnittstelle unterstützt HTTP und TCP; eingehendes UDP ist nicht verfügbar. Ein gewöhnlicher UDP-SFU/TURN-Server wird deshalb nicht in denselben Railway-Container eingebaut. Quellen: [Railway TCP Proxy](https://docs.railway.com/networking/tcp-proxy), [Railway-Antwort zu UDP](https://station.railway.com/feedback/allow-outbound-udp-traffic-0f74101c).
 
@@ -10,13 +10,13 @@ Die öffentliche Railway-Netzwerkschnittstelle unterstützt HTTP und TCP; eingeh
 
 1. Neues Projekt **Zwoice** mit Service `zwoice` anlegen und dieses Repository als Service verbinden. Railway baut das `Dockerfile`.
 2. Region möglichst nahe an der Hauptnutzergruppe wählen, zunächst Europa für eine europäische Community.
-3. Nur für ältere private API-Integrationen optional `ZWOICE_SIGNING_KEY` setzen (mindestens 32 zufällige Bytes). Der öffentliche Zugang braucht diesen Schlüssel nicht. Vorhandene Secrets werden vom IaC-Plan bewahrt.
-4. Cloudflare-Variablen aus dem nächsten Abschnitt setzen.
+3. Ein persistentes Volume nach `/data` mounten und `ZWOICE_DATA_DIR=/data` setzen. Die App verweigert auf Railway den Start, wenn dieser Pfad nicht dem Volume entspricht. Der Container setzt die Verzeichnisrechte und läuft danach als UID 10001.
+4. Cloudflare-Variablen sowie die E-Mail-Konfiguration aus den folgenden Abschnitten setzen.
 5. Eine öffentliche Railway-Domain generieren. Die Basisadresse `https://…up.railway.app` wird im Client eingetragen.
 6. Exakt **eine Replik** betreiben. Zwoice hält Präsenz im Prozessspeicher; unabhängig replizierte Instanzen würden Teilnehmer auf getrennte Graphen verteilen.
 7. `/healthz` muss HTTP 200 liefern. Der Prüfpfad kontrolliert den Signalisierungsprozess, nicht die Erreichbarkeit des externen TURN-Dienstes.
 
-Die aktuelle Infrastrukturdatei ist `.railway/railway.ts`. Nach `npm ci` und `railway link` zuerst `railway config plan` prüfen, dann `railway config apply` ausführen. Sie setzt Healthcheck, eine Replik, Docker-Build und zehn Sekunden Drain-Zeit. Die drei dauerhaften Secrets werden mit `preserve()` ausdrücklich erhalten; ihre Werte stehen nie in der Datei. Neue Betreiber müssen sie vor dem ersten Apply in Railway setzen. Bei weiteren manuell verwalteten Variablen diese ebenfalls mit `preserve()` aufnehmen: nicht deklarierte Variablen können vom IaC-Plan zur Löschung vorgesehen werden. Ein Plan mit unerwarteten Löschungen darf nicht angewendet werden.
+Die aktuelle Infrastrukturdatei ist `.railway/railway.ts`. Nach `npm ci` und `railway link` zuerst `railway config plan` prüfen, dann `railway config apply` ausführen. Sie setzt Healthcheck, eine Replik, Docker-Build und zehn Sekunden Drain-Zeit. Cloudflare- und Login-Konfiguration werden mit `preserve()` ausdrücklich erhalten; Geheimnisse stehen nie in der Datei. Die Datei deklariert außerdem das 1-GiB-Kontenvolume und tägliche Sicherungen. Der alte Signierschlüssel bleibt bei Migration erhalten, wird aber nicht mehr als Anmeldung akzeptiert. Bei weiteren manuell verwalteten Variablen diese ebenfalls mit `preserve()` aufnehmen: nicht deklarierte Variablen können vom IaC-Plan zur Löschung vorgesehen werden. Ein Plan mit unerwarteten Löschungen darf nicht angewendet werden.
 
 Railway wertet `.railway/` nicht automatisch bei jedem Code-Deployment aus. Änderungen daran erfordern ein separates `config apply`. Das alte `railway.json` ist abgekündigt und wird deshalb nicht mehr ausgeliefert. [Railway IaC](https://docs.railway.com/infrastructure-as-code)
 
@@ -32,7 +32,7 @@ Railway nutzt standardmäßig „On Failure“ mit bis zu zehn Neustarts. [Neust
 2. Dessen Key-ID als `ZWOICE_CF_TURN_KEY_ID` und das zugehörige API-Token als `ZWOICE_CF_TURN_API_TOKEN` in Railway speichern.
 3. Neu bereitstellen. Zwoice ruft den Cloudflare-Endpunkt zur Ausstellung kurzlebiger ICE-Zugangsdaten serverseitig auf. Die dauerhaften Geheimnisse verlassen den Server nicht.
 
-Zugangsdaten gelten eine Stunde und werden bei laufenden Sitzungen nach 30 Minuten erneuert. Vorübergehende Fehler bei der Erneuerung werden nach einer Minute erneut versucht. Ein Fehler beim erstmaligen Abruf lässt die Anmeldung kontrolliert scheitern, statt eine vermeintlich zuverlässige Sitzung ohne Relay zu starten.
+Zugangsdaten gelten eine Stunde und werden bei laufenden Sitzungen nach 30 Minuten erneuert. Vorübergehende Fehler bei der Erneuerung werden nach einer Minute erneut versucht. Ein Fehler beim erstmaligen Abruf lässt den Sprachstart kontrolliert scheitern, statt eine vermeintlich zuverlässige Sitzung ohne Relay zu starten.
 
 [Cloudflare-Anleitung](https://developers.cloudflare.com/realtime/turn/generate-credentials/)
 
@@ -50,13 +50,22 @@ turn:turn.example.com:3478?transport=udp,turns:turn.example.com:5349?transport=t
 
 Cloudflare-Konfiguration hat Vorrang vor coturn. STUN kann mit `ZWOICE_STUN_URLS` überschrieben werden. Der Signalisierungsdienst erstellt zeitlich begrenzte coturn-REST-Zugangsdaten mittels HMAC-SHA1 gemäß dem TURN-REST-Verfahren.
 
-## Öffentlicher Zugang
+## Selbstregistrierung mit kontrolliertem Zugang
 
-Die Desktop-App meldet Nutzer anhand ihrer frischen Sauce-`/self`-Position automatisch an. **Keine persönlichen Einladungen ausstellen.** `ZWOICE_SIGNING_KEY` ist für diesen Ablauf optional. Ein bestehender Schlüssel bleibt für ältere private Integrationen erhalten; er wird nicht in Desktop-Pakete eingebaut.
+Die Desktop-App fragt nach E-Mail und Einmalcode. Erst nach erfolgreicher Anmeldung öffnet sie die Sprachverbindung anhand der frischen Sauce-`/self`-Position. **Keine persönlichen Einladungen ausstellen.** Alte Clients ohne Login und alte Einladungstokens erhalten HTTP 401; Nutzer müssen v1.2.0 oder neuer installieren.
 
-Die Startseite des Railway-Dienstes liefert die öffentliche Download-Seite. Pakete werden über GitHub Releases verteilt; das Go-Backend braucht dafür weder Download-Proxy noch Datenbank. Die Downloadlinks gehören zu v1.1.0 und müssen bei einer neuen Veröffentlichung gemeinsam mit den Release-Paketen aktualisiert werden.
+In Railway hinterlegen:
 
-Grenzen und Vertrauensmodell des kontolosen Zugangs stehen in [SECURITY.md](SECURITY.md). Bei einem Dienstneustart gehen laufende Sitzungen verloren und Clients verbinden sich erneut. Die globalen Anmeldelimits verteilen größere Wiederverbindungswellen zeitlich.
+- `ZWOICE_RESEND_API_KEY`: API-Key für den Versand über Resend.
+- `ZWOICE_MAIL_FROM`: z. B. `Zwoice <login@deine-domain.de>`, mit in Resend verifizierter Absenderdomain.
+- `ZWOICE_ADMIN_EMAIL`: die E-Mail des Betreibers. Erst deren regulärer Login verleiht Zugriff auf **Dein Konto → Zugänge verwalten**.
+- `ZWOICE_EMAIL_DAILY_LIMIT`: optionales Versandlimit, standardmäßig 90 pro UTC-Tag. Mit dem tatsächlichen Anbieter-Kontingent abstimmen.
+
+Ohne vollständige Mailkonfiguration startet der Server, verweigert aber neue Anmeldungen. Es existieren kein Demo-Login, kein voreingestelltes Passwort und keine Freigabe über den alten Signierschlüssel. Erst erfolgreich zugestellte und bestätigte Codes erstellen Konten. Resend nennt derzeit 3.000 E-Mails pro Monat und 100 pro Tag im kostenlosen Tarif ([Preise](https://resend.com/pricing)); diese Grenze betrifft zusammen Registrierung und erneute Logins. Für größere Communities das Mailkontingent und das Zwoice-Tageslimit passend erhöhen.
+
+Konten, Sperren und Sitzungshashes überleben Deployments. Cloudflare-Grants alter Verbindungen werden beim Neustart zum Widerruf vorgemerkt. Ein Railway-Volume bindet den Server an eine Replik; Wartung kann kurze Unterbrechungen auslösen. Vor Änderungen am Datenmodell eine Volume-Sicherung erstellen. Wiederherstellung bei gestopptem Dienst aus einer Railway-Sicherung vornehmen; eine Live-Kopie nur der bbolt-Datei ist kein garantiert konsistentes Backup. Die tatsächliche Wiederherstellung regelmäßig in einer isolierten Umgebung prüfen.
+
+Die öffentliche Startseite liefert Downloadlinks für v1.2.0. Pakete werden über GitHub Releases verteilt. Der gesamte Sprachzugang bleibt serverseitig geschützt, auch wenn jemand den Client verändert oder die UI umgeht. Grenzen und Vertrauensmodell stehen in [SECURITY.md](SECURITY.md).
 
 ## Freigabe
 

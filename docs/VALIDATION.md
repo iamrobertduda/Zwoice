@@ -17,7 +17,7 @@ Stand: 11. Oktober 2026. Dieses Protokoll unterscheidet ausgeführte Prüfungen 
 
 Zusätzlich ist der [GitHub-Prüflauf für Commit 38636f6](https://github.com/iamrobertduda/Zwoice/actions/runs/38120994517) vollständig erfolgreich: Go-Tests mit Race Detector unter Windows, macOS und Linux, Chromium-Integrationstests unter Linux und Paketierung aller sechs Architekturen. Das ist eine Laufzeitprüfung des Go-Kerns auf drei Betriebssystemen, noch keine Prüfung physischer Audiogeräte dort.
 
-Der Cloud-Test verwendet synthetische Mikrofon-Audiodaten und Sauce-Positionsdaten nach dem untersuchten echten API-Schema. Er verwendet **echtes WebRTC, den produktiven Railway-Dienst und Cloudflare TURN**, aber keine reale Zwift-Fahrt und keine zwei verschiedenen Internetanschlüsse. Die aktuellen simulierten Athleten verwenden den öffentlichen Zugang und eine zufällige synthetische Event-Untergruppe, um keine realen Fahrten zu erreichen. Der Test benötigt keine Signierschlüssel; Browser-Traces sind im gehosteten Test deaktiviert.
+Der Cloud-Test verwendet synthetische Mikrofon-Audiodaten und Sauce-Positionsdaten nach dem untersuchten echten API-Schema. Er verwendet **echtes WebRTC, den produktiven Railway-Dienst und Cloudflare TURN**, aber keine reale Zwift-Fahrt und keine zwei verschiedenen Internetanschlüsse. Die simulierten Athleten verwendeten in v1.1.0 den öffentlichen Zugang und eine zufällige synthetische Event-Untergruppe, um keine realen Fahrten zu erreichen. Der Test benötigt keine Signierschlüssel; Browser-Traces sind im gehosteten Test deaktiviert.
 
 ## Ressourcenmessung
 
@@ -40,10 +40,10 @@ npx playwright install chromium
 npm run test:browser
 go test -run '^$' -bench BenchmarkThousandRiders -benchmem ./internal/proximity
 go run ./tests/load -clients 1000 -duration 90s
-node scripts/release.mjs 1.1.0
+node scripts/release.mjs 1.2.0
 ```
 
-Für einen kontrollierten gehosteten Test nur `ZWOICE_TEST_SERVER` als Prozessumgebung setzen und `npm run test:browser -- --grep 'two real'` ausführen. Mit `ZWOICE_TEST_TURN_TLS=1` zusätzlich ausschließlich TURN/TLS erzwingen. Der Test nutzt die IDs 1001 und 1002; nicht parallel zu realen Nutzern mit diesen IDs ausführen.
+Für einen kontrollierten Cloudflare-Test `ZWOICE_TEST_CF_KEY` und `ZWOICE_TEST_CF_TOKEN` ausschließlich als Prozessumgebung setzen und `npm run test:browser -- --grep 'two real'` ausführen. Der Broker läuft lokal mit echten Konto-Sitzungen und simuliertem Mailversand; Cloudflare transportiert reales WebRTC-Audio. Das ist kein Test des produktiven E-Mail-Versands oder des Railway-Loginpfads. Mit `ZWOICE_TEST_TURN_TLS=1` zusätzlich TURN/TLS erzwingen. Browser-Traces bleiben bei echten Credentials deaktiviert. `go test ./internal/broker -run TestCloudflareCredentialLifecycle -count=1` prüft unter denselben Variablen echte Ausgabe und Widerruf.
 
 ## Noch erforderliche Freigabeprüfungen
 
@@ -62,3 +62,15 @@ Lokale Go-Race-Tests prüfen zusätzlich öffentliche Anmeldung, ungültige IDs,
 Der [Prüflauf für v1.1.0 / d38b109](https://github.com/iamrobertduda/Zwoice/actions/runs/38122748233) ist mit allen sechs Jobs erfolgreich: Go-Race-Tests unter drei Betriebssystemen, fünf Browser-Ende-zu-Ende-Tests, sechs portable Pakete plus Mac-DMG sowie Windows-Installer einschließlich Installation, Healthcheck des installierten Programms und Deinstallation. Der erneute Cloud-Test mit öffentlichem Zugang bestätigt bidirektionales Opus über Cloudflare TURN/TLS (`relay/relay`, `relayProtocol=tls`) ohne Einladung oder Signierschlüssel. Die universelle Mac-DMG wurde schreibgeschützt eingebunden, ihre Signatur geprüft und die enthaltene App erfolgreich gestartet.
 
 Windows-Installer: 5,82 MiB; universelle Mac-DMG: 6,45 MiB. Diese Größen beziehen sich auf v1.1.0. Die obenstehenden 1.000-Client- und Ressourcenmessungen stammen vom vorherigen Kernstand v1.0.0 und sind keine erneute Lastmessung des öffentlichen Anmeldepfades.
+
+
+## Änderung v1.2.0: verifizierte Konten
+
+Die Angaben zu anonymen Cloud-Tests weiter oben sind historisch (v1.1.0). v1.2.0 verweigert anonyme Zugänge und Einladungstokens. Lokal erfolgreich geprüft:
+
+- Go-Race-Tests: dauerhafte Konten/Sitzungen, Code-Verbrauch und Ablauf, fünf Fehlversuche, E-Mail-Cooldown, Gerätebegrenzung, Adminberechtigung, Konto-/TURN-Sperren, Tageslimit, abgewiesene anonyme/alte Tokens ohne Provideraufruf, laufende Sprachverbindung nach Sperre beendet, Logout während TURN-Ausgabe, Wiederholung fehlgeschlagener Widerrufe und geschützte servergebundene Login-Cookies.
+- Sechs Browserprüfungen: responsive Demo, zwei angemeldete WebRTC-Clients, Fahrt-Erkennung und Wiederverbindung, fehlendes Sauce, Downloads sowie Selbstregistrierung, HttpOnly-Cookie, persistenter Login, Abmelden und Betreiberregeln.
+- Echte Cloudflare-Credential-Ausgabe und Revoke-API erfolgreich; zwei lokal angemeldete Clients übertragen bidirektionales Opus über echte Cloudflare-Relays (`relay/relay`). Das Postfach ist simuliert; es wurden keine echten Login-E-Mails versendet.
+- 32 angemeldete Clients über 15 Sekunden: keine unerwarteten Trennungen, etwa 2,0 MiB kombinierter Go-Heap für Server und Lastgenerator, nach Aufräumen etwa 0,5 MiB. Dies ist ein kurzer Integrationslauf, keine Produktions-Lastgarantie.
+
+Ausstehend: echter Mailversand von der verifizierten Betreiber-Domain, Login über diese Zustellung und die weiterhin oben genannten realen Zwift-/Sauce-/Geräte- und Dauerprüfungen. Go-Builds und Browser-Simulation allein ersetzen diese nicht.

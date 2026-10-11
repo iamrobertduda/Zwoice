@@ -1,4 +1,5 @@
 import { Voice, distanceGain } from "./voice.js";
+import { Accounts } from "./accounts.js";
 
 const $ = (id) => document.getElementById(id);
 const defaults = {
@@ -68,6 +69,19 @@ try {
 voice.volume = Number(settings.volume) / 100;
 $("volume").value = settings.volume;
 $("volumeValue").value = `${settings.volume} %`;
+const accounts = new Accounts(
+  () => settings.server,
+  () => {
+    if (!wanted)
+      $("connectButton").textContent = accounts.current
+        ? "＋ Fahrt starten"
+        : "Anmelden & losfahren";
+    renderSetup(setupState);
+  },
+  () => stop(false),
+  notice,
+);
+const loginReady = configuration.then(() => accounts.refresh());
 const worlds = {
   1: "Watopia",
   2: "Richmond",
@@ -168,6 +182,8 @@ $("settingsForm").addEventListener("submit", (event) => {
     relayOnly: $("relayOnly").checked,
   };
   saveSettings();
+  accounts.set(null);
+  accounts.refresh();
   $("settingsDialog").close();
   notice(
     wasActive
@@ -175,8 +191,8 @@ $("settingsForm").addEventListener("submit", (event) => {
       : "Alles gespeichert. Du kannst deine Fahrt starten.",
   );
 });
-$("forgetButton").onclick = () => {
-  stop(false);
+$("forgetButton").onclick = async () => {
+  await accounts.logout();
   try {
     localStorage.removeItem("zwoice.settings");
     localStorage.removeItem("zwoice.mutes");
@@ -213,6 +229,8 @@ document
 
 $("connectButton").onclick = () => (wanted ? stop() : start());
 async function start() {
+  await loginReady;
+  if (!accounts.ensure()) return;
   if (
     !navigator.mediaDevices?.getUserMedia ||
     !window.RTCPeerConnection ||
@@ -341,6 +359,10 @@ function connect() {
         reconnectReason = m.message;
         notice(m.message, true);
         if (m.fatal !== false) stop(false);
+        if (m.loginRequired) {
+          accounts.set(null);
+          accounts.show();
+        }
       }
     } catch (error) {
       notice(
@@ -394,7 +416,9 @@ function stop(clearNotice = true) {
   peerStates.clear();
   renderPeers([]);
   renderControls();
-  $("connectButton").textContent = "Fahrt starten";
+  $("connectButton").textContent = accounts.current
+    ? "Fahrt starten"
+    : "Anmelden & losfahren";
   $("setupPanel").hidden = false;
   renderSetup(setupState);
   $("liveDot").classList.remove("active");
@@ -680,7 +704,7 @@ function renderSetup(state, name = "") {
   const content = {
     checking: [
       "Wir schauen, ob deine Fahrt bereit ist.",
-      "Zwoice erkennt dich automatisch über Sauce. Kein Konto, kein Einladungscode.",
+      "Einmal anmelden. Deine Fahrt erkennt Zwoice danach automatisch über Sauce.",
     ],
     missing: [
       "Öffne Zwift und Sauce. Wir warten hier.",
@@ -709,6 +733,11 @@ function renderSetup(state, name = "") {
           ? "Verbunden · Warte auf deine Fahrt"
           : "Warte auf Sauce",
     );
+  if (!accounts.current) {
+    content[0] = "Einmal anmelden. Dann einfach losfahren.";
+    content[1] =
+      "E-Mail eingeben, Code bestätigen – fertig. Auf deinem Gerät kannst du angemeldet bleiben. Keine Einladung nötig.";
+  }
   $("setupTitle").textContent = content[0];
   $("setupDescription").textContent = content[1];
   $("setupSymbol").textContent = state === "ready" ? "✓" : "↗";

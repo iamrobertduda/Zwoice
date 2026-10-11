@@ -2,11 +2,13 @@
 
 ## Zugriff
 
-Der normale Zugang ist **öffentlich und kontolos**. Der lokale Companion wartet auf eine frische eigene Sauce-Position und meldet deren Athleten-ID über einen HTTP-Header an. Alle normalen Nutzer landen in der Gruppe `public`. Eine Sitzung gilt höchstens 24 Stunden; nach Ende oder Neustart meldet der Client sich automatisch neu an. Pro Athleten-ID ist eine Sitzung gleichzeitig möglich; parallele Anmeldeversuche reservieren die ID schon vor dem TURN-Abruf.
+Sprachchat und TURN benötigen ein **verifiziertes E-Mail-Konto und eine gültige Sitzung**. Die Selbstregistrierung erfordert keine Betreiber-Einladung: ein achtstelliger Einmalcode bestätigt die E-Mail. Codes sind zehn Minuten gültig, nach fünf Fehlversuchen gesperrt und nach erfolgreicher Verwendung verbraucht. Ungültige oder gesperrte Konten erhalten keine TURN-Zugangsdaten. Alte Einladungstokens und anonyme Athleten-Header werden ab v1.2 abgewiesen.
 
-Sauce liefert keine kryptografische Attestierung. Ein modifizierter Client kann daher **Identität und Position fälschen** und etwa eine fremde ID vorübergehend belegen. Automatische Erkennung ist keine Zwift-Kontoverifikation. Der offene Zugang erfüllt bewusst den kontolosen Start; Rate-Limits ersetzen keine Identitätsprüfung. Der Server vermittelt Signalisierung und ist Teil der Vertrauensgrenze.
+Sitzungen verwenden 256 Bit zufällige Tokens. Der Server speichert nur SHA-256-Hashes. Die lokale App legt den Token in ein HttpOnly-/SameSite-Strict-Cookie, gebunden an den ausgewählten Sprachserver; JavaScript und localStorage erhalten ihn nicht. Loopback-Cookies verwenden HTTP, entfernte Kommunikation ausschließlich HTTPS. Ohne „angemeldet bleiben“ gilt die Sitzung zwölf Stunden, andernfalls 30 Tage. Maximal fünf Geräteanmeldungen bleiben gültig. Eine sechste Anmeldung widerruft die älteste.
 
-Für bestehende eigene Integrationen versteht der Broker weiterhin signierte, zeitbegrenzte private Gruppen über den Authorization-Header. Die normale Oberfläche nutzt diesen Pfad nicht mehr; vorhandene Einladungstokens werden aus ihrem lokalen Speicher entfernt. Ein ungültiger Authorization-Header fällt nicht auf den öffentlichen Zugang zurück.
+Die E-Mail aus `ZWOICE_ADMIN_EMAIL` erhält nach normaler Code-Verifikation Betreiberrechte. Weder der erste Nutzer noch vom Client gesendete Rollen werden privilegiert. Der Betreiber kann Konten sperren, TURN/Sprachchat pro Konto deaktivieren, Freigaben pro UTC-Tag begrenzen und Registrierung oder Sprachchat global abschalten. Nur eine Sprachverbindung je Konto und je Athleten-ID ist gleichzeitig möglich. Zugang und Status werden beim Verbinden, bei TURN-Erneuerung und alle zwei Sekunden während der Sitzung geprüft.
+
+Sauce liefert keine kryptografische Attestierung. Ein modifizierter Client kann weiterhin **Zwift-Identität und Position fälschen**. Ein Zwoice-Konto verifiziert eine E-Mail, keine Zwift-Kontoinhaberschaft. Der Server vermittelt Signalisierung und ist Teil der Vertrauensgrenze.
 
 Nähe ist eine kooperative Anwendungsregel. Der Server vermittelt Signale nur entlang aktueller, aktiver Kanten. Die regulären Clients schließen Peer-Verbindungen, wenn diese Kante wegfällt. Zwei absichtlich modifizierte Clients könnten eine bereits aufgebaute direkte Verbindung weiterbetreiben. Proximity ist keine DRM- oder Geheimhaltungsgrenze gegen kooperierende Angreifer.
 
@@ -18,7 +20,7 @@ Ein Prozess mit den Rechten des lokalen Benutzers bleibt außerhalb dieses Schut
 
 ## Übertragung
 
-Entfernte Signalisierungsserver benötigen HTTPS/WSS. Nur für Loopback-Entwicklung ist HTTP zulässig. Die eigene Athleten-ID steht im `Zwoice-Athlete-ID`-Header des lokalen Go-Clients, nie in der URL. Optional unterstützte private Tokens bleiben im Authorization-Header. Der Browser sieht nur seine eigenen kurzlebigen ICE-Zugangsdaten.
+Entfernte Signalisierungsserver benötigen HTTPS/WSS. Nur für Loopback-Entwicklung ist HTTP zulässig. Die eigene Athleten-ID steht im `Zwoice-Athlete-ID`-Header des lokalen Go-Clients, nie in der URL. Die Konto-Sitzung steht ausschließlich im Authorization-Header. Der Browser sieht nur seine eigenen kurzlebigen ICE-Zugangsdaten.
 
 WebRTC-Audio ist zwischen den Endpunkten mittels DTLS-SRTP verschlüsselt. TURN vermittelt diese verschlüsselten Pakete. Direkte P2P-Verbindungen können IP-Adressen gegenüber Gesprächspartnern offenlegen; die Einstellung „IP-Adresse verbergen“ erzwingt Relay-only und lehnt einen Server ohne TURN ab.
 
@@ -26,7 +28,9 @@ WebRTC-Audio ist zwischen den Endpunkten mittels DTLS-SRTP verschlüsselt. TURN 
 
 | Ort | Daten |
 | --- | --- |
-| Browser lokal | Einstellungen und stummgeschaltete IDs. Löschbar in Einstellungen. |
+| Browser lokal | Einstellungen, stummgeschaltete IDs und geschütztes Login-Cookie. Abmelden widerruft die Sitzung; „Daten löschen“ entfernt auch Einstellungen. |
+| Railway-Volume | Verifizierte E-Mail, zufällige Konto-ID, Konto-/Loginzeit, Zugangsregeln und Tageszähler; gehashte Sitzungen und Codes. Konto bleibt bis zur Betreiberlöschung gespeichert. Abgelaufene Codes/Sitzungen werden minütlich bereinigt. Mail-Ratelimits werden nach 24 Stunden bereinigt. TURN-Nutzerkennungen und Zuordnung zu Konto/Sitzung bleiben bis zum erfolgreichen Widerruf oder Ablauf. Keine Relay-Passwörter auf Disk. |
+| Resend | Empfänger, Anmeldecode und Zustellungsmetadaten gemäß Anbieterbedingungen. |
 | Go-Client RAM | Aktuelle Sitzung, eigene Position und Verbindungskonfiguration. |
 | Railway RAM | Aktuelle ID, Anzeigename, Gruppe, Position, Zeitstempel und Signalisierungsverbindungen. Bei Trennung gelöscht. Rate-Limit-Zähler speichern IP-Präfixe und Zeitstempel vorübergehend; inaktive Einträge werden beim nächsten Anmeldeversuch nach zehn Minuten entfernt, maximal 10.000 Einträge. |
 | Cloudflare/coturn | Relay-Verbindungsmetadaten gemäß Anbieter-/Betreiberkonfiguration. |
@@ -35,7 +39,7 @@ Keine Audioaufzeichnung, Transkription, Analyse-Skripte oder Positionshistorie w
 
 ## Missbrauch und Betrieb
 
-Puffer, Nachrichtengröße und Gesamtverbindungen sind begrenzt. Öffentliche Verbindungen haben zusätzliche Grenzen:
+Puffer, Nachrichtengröße und Gesamtverbindungen sind begrenzt. Angemeldete Sprachverbindungen haben zusätzliche Grenzen:
 
 - Höchstens acht gleichzeitig aktive/anmeldende Sitzungen je IPv4-Adresse oder IPv6-/64-Präfix.
 - Pro IP-Präfix 20 Anmeldeversuche als Burst, danach ein neuer Versuch je zehn Sekunden.
@@ -45,4 +49,8 @@ Puffer, Nachrichtengröße und Gesamtverbindungen sind begrenzt. Öffentliche Ve
 
 IP-Header werden nur bei Ausführung auf Railway (`RAILWAY_PROJECT_ID`) übernommen, über den dort vom HTTP-Ingress gesetzten `X-Real-IP`-Header. [Railway-Spezifikation](https://docs.railway.com/networking/public-networking/specs-and-limits). Ohne diesen Modus zählt die direkte TCP-Gegenstelle; fremde Forwarding-Header werden ignoriert. Der Railway-Dienst darf nicht zusätzlich über einen ungeschützten TCP-Proxy erreichbar gemacht werden.
 
-Die Limits begrenzen Anmelde- und Ressourcenmissbrauch; sie garantieren keine feste TURN-Bandreiten-/Kostengrenze. Gültige kurzlebige TURN-Zugangsdaten können von modifizierten Clients bis zum Ablauf anderweitig verwendet werden. Anbieter-Budgetalarme und Missbrauchsbeobachtung gehören zum öffentlichen Betrieb. Es gibt derzeit keine verifizierten Konten, persistente Sperrliste oder Meldungsstelle innerhalb der App. Stummschaltungen gelten lokal. Ein globaler Signierschlüsselwechsel betrifft nur den optionalen privaten Zugang.
+E-Mail-Codes sind zusätzlich pro E-Mail auf drei pro Stunde mit mindestens 60 Sekunden Abstand begrenzt. Standardmäßig werden höchstens 90 Login-E-Mails pro UTC-Tag versendet (`ZWOICE_EMAIL_DAILY_LIMIT`). Öffentliche Auth-Endpunkte haben begrenzte IP-/globale Budgets; Codes werden weder in Logs noch API-Antworten ausgegeben.
+
+Cloudflare-Credentials werden vor der Ausgabe dauerhaft dem Konto, der Sitzung und Verbindung zugeordnet. Abmelden, Sperren, TURN-Abschaltung, Verbindungsende und Serverneustart markieren sie zum Widerruf. Ein Hintergrundprozess ruft die Cloudflare-Revoke-API auf; Fehler werden nach einer Minute erneut versucht, bis die einstündige Gültigkeit endet. Bei nicht erreichbarem Provider ist Widerruf verzögert. Alte vor dem v1.2-Upgrade ausgegebene Credentials sind nicht in dieser Datenbank erfasst und können noch bis zum Ablauf gelten. coturn hat hier keinen vergleichbaren Revoke-Pfad; dessen Credentials laufen aus.
+
+Die Limits begrenzen Anmelde- und Ressourcenmissbrauch; sie garantieren keine feste TURN-Bandreiten-/Kostengrenze. Gültige kurzlebige TURN-Zugangsdaten können von modifizierten Clients bis zum Ablauf anderweitig verwendet werden. Anbieter-Budgetalarme und Missbrauchsbeobachtung gehören zum öffentlichen Betrieb. Tageslimits zählen Ausgabeversuche, auch bei Providerfehlern, und gelten nicht als Bandbreitenbudget. Stummschaltungen gelten lokal. Betreiber-Sperren wirken serverweit.

@@ -8,14 +8,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/broker"
 	"github.com/iamrobertduda/Zwoice/internal/desktop"
 )
@@ -93,12 +94,33 @@ func (s *source) handler() http.Handler {
 func serve(address string, h http.Handler) {
 	go func() { log.Fatal(http.ListenAndServe(address, h)) }()
 }
+
+type mailbox struct {
+	mu    sync.Mutex
+	codes map[string]string
+}
+
+func (m *mailbox) SendLogin(_ context.Context, email, code, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.codes[email] = code
+	return nil
+}
 func main() {
-	key := []byte(strings.Repeat("integration-test-only-", 3))
-	serverURL := "http://127.0.0.1:18089"
-	if hosted := os.Getenv("ZWOICE_TEST_SERVER"); hosted != "" {
-		serverURL = hosted
+	directory, err := os.MkdirTemp("", "zwoice-browser-accounts-")
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer os.RemoveAll(directory)
+	mail := &mailbox{codes: map[string]string{}}
+	store, err := accounts.Open(accounts.Config{Path: filepath.Join(directory, "accounts.db"), Mailer: mail, AdminEmail: "owner@example.test", DailyEmailLimit: 10000})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer store.Close()
+
+	serverURL := "http://127.0.0.1:18089"
+
 	var current atomic.Pointer[broker.Hub]
 	var cancel context.CancelFunc
 	var resetMu sync.Mutex
@@ -110,23 +132,24 @@ func main() {
 		}
 		ctx, stop := context.WithCancel(context.Background())
 		cancel = stop
-		h := broker.New(broker.Config{Key: key})
+		h := broker.New(broker.Config{Accounts: store, CloudflareKeyID: os.Getenv("ZWOICE_TEST_CF_KEY"), CloudflareAPIToken: os.Getenv("ZWOICE_TEST_CF_TOKEN")})
 		current.Store(h)
 		go h.Run(ctx)
 	}
 	reset()
 	serve("127.0.0.1:18089", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { current.Load().Handler().ServeHTTP(w, r) }))
 	sources := map[string]*source{"1001": {id: 1001, course: 1, riding: true}, "1002": {id: 1002, x: 8, course: 1, riding: true}}
-	if os.Getenv("ZWOICE_TEST_SERVER") != "" {
-		// Isolate synthetic audio from real rides, without a private invitation.
-		event := time.Now().UnixMilli()
-		sources["1001"].event, sources["1002"].event = event, event
-	}
+
 	serve("127.0.0.1:11081", sources["1001"].handler())
 	serve("127.0.0.1:11082", sources["1002"].handler())
 	serve("127.0.0.1:18787", desktop.Handler("127.0.0.1:18787"))
 	serve("127.0.0.1:18788", desktop.Handler("127.0.0.1:18788"))
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /mail", func(w http.ResponseWriter, r *http.Request) {
+		mail.mu.Lock()
+		defer mail.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]string{"code": mail.codes[r.URL.Query().Get("email")]})
+	})
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"server": serverURL})
 	})

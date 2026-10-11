@@ -41,6 +41,7 @@
         <header class="topbar">
           <div class="breadcrumb">Deine Ausfahrt <span>/</span> Übersicht</div>
           <div class="top-actions">
+            <button class="text-button" id="accountButton">Anmelden</button>
             <span class="session-badge" id="sessionBadge"
               ><span class="status-dot"></span> Bereit, wenn du es bist</span
             ><button class="text-button" id="demoButton">
@@ -73,20 +74,23 @@
                 <div class="eyebrow">EINMAL KLICKEN. GEMEINSAM FAHREN.</div>
                 <h2 id="setupTitle">Wir schauen, ob deine Fahrt bereit ist.</h2>
                 <p id="setupDescription">
-                  Zwoice erkennt dich automatisch über Sauce. Kein Konto, kein
-                  Einladungscode.
+                  Einmal per E-Mail anmelden. Deine Fahrt erkennt Zwoice danach
+                  automatisch über Sauce.
                 </p>
               </div>
             </div>
             <ol class="setup-progress" aria-label="Verbindungsstatus">
+              <li id="setupAccount">
+                <span aria-hidden="true">1</span> Anmelden
+              </li>
               <li id="setupSauce">
-                <span aria-hidden="true">1</span> Sauce finden
+                <span aria-hidden="true">2</span> Sauce finden
               </li>
               <li id="setupRide">
-                <span aria-hidden="true">2</span> Fahrt erkennen
+                <span aria-hidden="true">3</span> Fahrt erkennen
               </li>
               <li id="setupMic">
-                <span aria-hidden="true">3</span> Mikrofon freigeben
+                <span aria-hidden="true">4</span> Mikrofon freigeben
               </li>
             </ol>
             <div id="sauceActions" class="setup-actions" hidden>
@@ -393,9 +397,9 @@
         <li>
           <strong>Zwoice verbinden</strong>
           <p>
-            Klicke auf „Fahrt starten“ und erlaube dein Mikrofon. Deinen Fahrer,
-            Namen und den Sprachserver erkennt Zwoice selbst. Du brauchst weder
-            eine Einladung noch ein zusätzliches Konto.
+            Melde dich mit deiner E-Mail an. Ein Code bestätigt dein Konto –
+            ohne Passwort oder Einladung. Klicke danach auf „Fahrt starten“ und
+            erlaube dein Mikrofon. Deinen Fahrer erkennt Zwoice selbst.
           </p>
         </li>
         <li>
@@ -419,6 +423,124 @@
         deine IP-Adresse gegenüber Gesprächspartnern offenlegen; „IP-Adresse
         verbergen“ erzwingt TURN.
       </p>
+    </dialog>
+
+    <dialog id="accountDialog" aria-labelledby="accountTitle">
+      <div class="dialog-heading">
+        <h2 id="accountTitle">Anmelden. Und losfahren.</h2>
+        <button
+          class="square-button"
+          data-close="accountDialog"
+          aria-label="Schließen"
+        >
+          ×
+        </button>
+      </div>
+      <p id="loginMessage" class="notice" role="status" hidden></p>
+      <form id="emailForm">
+        <p class="dialog-description">
+          Deine E-Mail genügt. Wir schicken dir einen Anmeldecode. Beim ersten
+          Mal entsteht damit dein Zwoice-Konto – ohne Passwort und ohne
+          Einladung.
+        </p>
+        <label
+          >E-Mail-Adresse<input
+            id="loginEmail"
+            type="email"
+            autocomplete="email"
+            placeholder="du@beispiel.de"
+            maxlength="254"
+            required
+        /></label>
+        <div class="dialog-actions auth-actions">
+          <button class="primary-button" type="submit">
+            Code per E-Mail erhalten →
+          </button>
+        </div>
+        <p class="field-note">
+          Deine E-Mail bleibt für andere Fahrer unsichtbar. Wir nutzen sie für
+          deine Anmeldung und die Verwaltung deines Zugangs.
+        </p>
+      </form>
+      <form id="codeForm" hidden>
+        <p class="dialog-description" id="codeDestination"></p>
+        <label
+          >Anmeldecode<input
+            id="loginCode"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9\s]{8,12}"
+            maxlength="12"
+            placeholder="12345678"
+            required
+        /></label>
+        <label class="check-label"
+          ><input type="checkbox" id="rememberLogin" checked /> Auf diesem Gerät
+          30 Tage angemeldet bleiben</label
+        >
+        <div class="dialog-actions auth-actions">
+          <button class="text-button" type="button" id="changeEmail">
+            E-Mail ändern / neuer Code</button
+          ><button class="primary-button" type="submit">Anmelden</button>
+        </div>
+        <p class="field-note">
+          Noch keine E-Mail? Schau auch im Spamordner nach. Du kannst nach einer
+          Minute einen neuen Code anfordern.
+        </p>
+      </form>
+      <div id="accountDetails" hidden>
+        <p class="account-email" id="accountEmail"></p>
+        <p class="dialog-description" id="accountAccess"></p>
+        <div class="dialog-actions">
+          <button class="text-button" id="logoutButton">Abmelden</button
+          ><button class="secondary-button" id="adminButton" hidden>
+            Zugänge verwalten
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="adminDialog" aria-labelledby="adminTitle">
+      <div class="dialog-heading">
+        <h2 id="adminTitle">Zugänge verwalten</h2>
+        <button
+          class="square-button"
+          data-close="adminDialog"
+          aria-label="Schließen"
+        >
+          ×
+        </button>
+      </div>
+      <p class="dialog-description">
+        Sperren beenden laufende Sprachverbindungen und widerrufen deren
+        Cloudflare-TURN-Zugänge. Tageslimits zählen Freigabeversuche, keine
+        Datenmenge.
+      </p>
+      <p id="adminMessage" class="notice" role="status" hidden></p>
+      <form id="policyForm">
+        <fieldset>
+          <legend>Für alle Nutzer</legend>
+          <label class="check-label"
+            ><input type="checkbox" id="registrationOpen" /> Neue Konten
+            erlauben</label
+          >
+          <label class="check-label"
+            ><input type="checkbox" id="turnEnabled" /> Sprachchat / TURN
+            aktivieren</label
+          >
+          <button class="secondary-button auth-actions" type="submit">
+            Regeln speichern
+          </button>
+        </fieldset>
+      </form>
+      <div class="panel-heading">
+        <h3>Konten</h3>
+        <button class="text-button" id="adminRefresh">Aktualisieren</button>
+      </div>
+      <div id="accountList"></div>
+      <button class="secondary-button" id="adminMore" hidden>
+        Weitere Konten laden
+      </button>
     </dialog>
   </body>
 </html>

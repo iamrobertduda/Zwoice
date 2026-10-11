@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:browser": "playwright test",
-    "check": "node --check internal/web/assets/app.js && node --check internal/web/assets/voice.js && node --check internal/web/assets/download.js"
+    "check": "node --check internal/web/assets/app.js && node --check internal/web/assets/voice.js && node --check internal/web/assets/download.js && node --check internal/web/assets/accounts.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

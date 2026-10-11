@@ -4,15 +4,11 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"strconv"
-	"strings"
 	"time"
-
-	"github.com/iamrobertduda/Zwoice/internal/auth"
 )
 
-// Public admission is deliberately accountless. Sauce does not attest Zwift
-// account ownership. Limits bound resource use; they are not identity verification.
+// Network admission limits complement account verification. Sauce itself does
+// not attest Zwift account ownership.
 type admission struct {
 	tokens  float64
 	updated time.Time
@@ -84,16 +80,4 @@ func (h *Hub) releasePublic(ip, id string, pending bool) {
 	if entry := h.admissions[ip]; entry != nil {
 		entry.active--
 	}
-}
-
-func (h *Hub) sessionClaims(r *http.Request, now time.Time) (auth.Claims, bool, error) {
-	if header := r.Header.Get("Authorization"); header != "" {
-		claims, err := auth.Verify(h.cfg.Key, strings.TrimPrefix(header, "Bearer "), now)
-		return claims, false, err
-	}
-	id, err := strconv.ParseInt(r.Header.Get("Zwoice-Athlete-ID"), 10, 64)
-	if err != nil || id <= 0 || id > 9007199254740991 {
-		return auth.Claims{}, true, strconv.ErrSyntax
-	}
-	return auth.Claims{AthleteID: id, Cohort: "public", Expires: now.Add(24 * time.Hour).Unix()}, true, nil
 }

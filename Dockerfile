@@ -7,9 +7,10 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /zwoice ./cmd/zwoice
 
 FROM alpine:3.23
-RUN apk add --no-cache ca-certificates && adduser -D -u 10001 zwoice
+RUN apk add --no-cache ca-certificates su-exec && adduser -D -u 10001 zwoice
 COPY --from=build /zwoice /usr/local/bin/zwoice
-USER zwoice
-ENV PORT=8080
+COPY scripts/server-entrypoint.sh /usr/local/bin/server-entrypoint
+RUN chmod 755 /usr/local/bin/server-entrypoint
+ENV PORT=8080 ZWOICE_DATA_DIR=/data
 EXPOSE 8080
-ENTRYPOINT ["zwoice", "server"]
+ENTRYPOINT ["server-entrypoint"]

@@ -1,4 +1,29 @@
 import { test, expect } from "@playwright/test";
+async function login(
+  page,
+  request,
+  email = `rider-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`,
+) {
+  await page.locator("#accountButton").click();
+  await page.locator("#loginEmail").fill(email);
+  await page
+    .getByRole("button", { name: "Code per E-Mail erhalten →" })
+    .click();
+  await expect(page.locator("#codeForm")).toBeVisible();
+  const { code } = await (
+    await request.get(
+      `http://127.0.0.1:11080/mail?email=${encodeURIComponent(email)}`,
+    )
+  ).json();
+  expect(code).toMatch(/^\d{8}$/);
+  await page.locator("#loginCode").fill(code);
+  await page
+    .locator("#codeForm")
+    .getByRole("button", { name: "Anmelden", exact: true })
+    .click();
+  await expect(page.locator("#accountDialog")).not.toBeVisible();
+  await expect(page.locator("#accountButton")).toHaveText("Dein Konto");
+}
 
 test("responsive demo, distance fading, mutes and keyboard-accessible setup", async ({
   page,
@@ -128,12 +153,13 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
         {
           i,
           config,
-          relayOnly: Boolean(process.env.ZWOICE_TEST_SERVER),
+          relayOnly: Boolean(process.env.ZWOICE_TEST_CF_KEY),
           turnTLS: Boolean(process.env.ZWOICE_TEST_TURN_TLS),
         },
       );
       await pages[i].goto(`http://127.0.0.1:${18787 + i}`);
-      await pages[i].getByRole("button", { name: "Fahrt starten" }).click();
+      await login(pages[i], request);
+      await pages[i].getByRole("button", { name: /Fahrt starten/ }).click();
     }
     const [a, b] = pages;
     for (const p of pages) {
@@ -155,7 +181,7 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
       });
     await expect.poll(() => bytes(a)).toBeGreaterThan(100);
     await expect.poll(() => bytes(b)).toBeGreaterThan(100);
-    if (process.env.ZWOICE_TEST_SERVER) {
+    if (process.env.ZWOICE_TEST_CF_KEY) {
       for (const p of pages) {
         const candidates = await p.evaluate(async () => {
           const stats = await window.__connections.at(-1).getStats();
@@ -175,7 +201,7 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
           expect(candidates.relayProtocol).toBe("tls");
       }
       console.log(
-        `Hosted Railway + Cloudflare: bidirectional Opus audio; selected candidates relay/relay${process.env.ZWOICE_TEST_TURN_TLS ? "; TURN over TLS" : ""}.`,
+        `Authenticated local broker + Cloudflare: bidirectional Opus audio; selected candidates relay/relay${process.env.ZWOICE_TEST_TURN_TLS ? "; TURN over TLS" : ""}.`,
       );
     }
     expect(
@@ -279,7 +305,7 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
   }
 });
 
-test("first launch needs no account, invitation, name or settings and waits for the ride", async ({
+test("first launch verifies an account without invitations or settings and waits for the ride", async ({
   page,
   request,
 }) => {
@@ -302,12 +328,13 @@ test("first launch needs no account, invitation, name or settings and waits for 
   });
   try {
     await page.goto("http://127.0.0.1:18787");
+    await login(page, request);
     await expect(page.locator("#setupTitle")).toHaveText(
       "Sauce ist da. Jetzt noch losfahren.",
       { timeout: 8000 },
     );
     await expect(page.locator("#inviteToken")).toHaveCount(0);
-    await page.getByRole("button", { name: "Fahrt starten" }).click();
+    await page.getByRole("button", { name: /Fahrt starten/ }).click();
     await expect(page.locator("#settingsDialog")).not.toBeVisible();
     // Longer than the heartbeat watchdog: waiting must not restart the session.
     await expect
@@ -405,4 +432,64 @@ test("public download page offers one installer per desktop platform", async ({
     path: "test-results/zwoice-downloads-mobile.png",
     fullPage: true,
   });
+});
+
+test("email signup, private remembered session, logout and operator controls", async ({
+  page,
+  request,
+  browser,
+}) => {
+  const config = await (
+    await request.get("http://127.0.0.1:11080/config")
+  ).json();
+  await page.route("**/config.json", (route) =>
+    route.fulfill({ json: config }),
+  );
+  await page.goto("http://127.0.0.1:18787");
+  await page.locator("#connectButton").click();
+  await expect(page.locator("#emailForm")).toBeVisible();
+  await expect(page.locator("#micLabel")).toHaveText("Mikrofon inaktiv");
+  await page.screenshot({ path: "test-results/zwoice-login.png" });
+  await page.keyboard.press("Escape");
+  await login(page, request, "owner@example.test");
+  const cookies = await page.context().cookies();
+  const session = cookies.find((c) => c.name.startsWith("zwoice_session_"));
+  expect(session.httpOnly).toBe(true);
+  expect(session.sameSite).toBe("Strict");
+  expect(session.expires).toBeGreaterThan(Date.now() / 1000 + 86400);
+  expect(await page.evaluate(() => document.cookie)).not.toContain(
+    "zwoice_session",
+  );
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
+    session.value,
+  );
+  await page.reload();
+  await expect(page.locator("#accountButton")).toHaveText("Dein Konto");
+  await page.locator("#accountButton").click();
+  await page.locator("#adminButton").click();
+  await expect(page.locator("#accountList .account-row")).not.toHaveCount(0);
+  await page.locator("#registrationOpen").uncheck();
+  await page.getByRole("button", { name: "Regeln speichern" }).click();
+  await expect(page.locator("#adminMessage")).toHaveText(
+    "Zugangsregeln gespeichert.",
+  );
+  await page.locator("#adminRefresh").click();
+  await expect(page.locator("#registrationOpen")).not.toBeChecked();
+  await page.locator("#registrationOpen").check();
+  await page.getByRole("button", { name: "Regeln speichern" }).click();
+  await expect(page.locator("#adminMessage")).toHaveText(
+    "Zugangsregeln gespeichert.",
+  );
+  await page.screenshot({ path: "test-results/zwoice-admin.png" });
+  await page.keyboard.press("Escape");
+  await page.locator("#accountButton").click();
+  await page.locator("#logoutButton").click();
+  await expect(page.locator("#accountButton")).toHaveText("Anmelden");
+  await page.reload();
+  await expect(page.locator("#accountButton")).toHaveText("Anmelden");
+  expect(
+    (await page.context().cookies()).some((c) =>
+      c.name.startsWith("zwoice_session_"),
+    ),
+  ).toBe(false);
 });

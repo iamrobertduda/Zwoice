@@ -8,15 +8,18 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/mail"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/iamrobertduda/Zwoice/internal/auth"
+	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/broker"
 	"github.com/iamrobertduda/Zwoice/internal/desktop"
 )
@@ -43,23 +46,8 @@ func run() error {
 	flags := flag.NewFlagSet(mode, flag.ContinueOnError)
 	port := flags.Int("port", 8787, "local UI port")
 	open := flags.Bool("open", true, "open the interface in the default browser")
-	athlete := flags.Int64("athlete", 0, "Zwift athlete ID for an invitation")
-	cohort := flags.String("group", "public", "invitation group; riders only hear others in the same group")
-	duration := flags.Duration("valid", 30*24*time.Hour, "invitation validity")
 	if err := flags.Parse(args); err != nil {
 		return err
-	}
-	key := []byte(os.Getenv("ZWOICE_SIGNING_KEY"))
-	if mode == "invite" {
-		if *duration <= 0 || *duration > 365*24*time.Hour {
-			return fmt.Errorf("invitation validity must be between 0 and 365 days")
-		}
-		token, err := auth.Sign(key, auth.Claims{AthleteID: *athlete, Cohort: *cohort, Expires: time.Now().Add(*duration).Unix()})
-		if err != nil {
-			return err
-		}
-		fmt.Println(token)
-		return nil
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -67,10 +55,36 @@ func run() error {
 	var address string
 	switch mode {
 	case "server":
-		if len(key) != 0 && len(key) < 32 {
-			return fmt.Errorf("optional ZWOICE_SIGNING_KEY must contain at least 32 bytes")
+		dataDir := os.Getenv("ZWOICE_DATA_DIR")
+		if dataDir == "" {
+			return fmt.Errorf("ZWOICE_DATA_DIR must point to persistent account storage")
 		}
-		cfg := broker.Config{Key: key, STUNURLs: splitEnv("ZWOICE_STUN_URLS"), TURNURLs: splitEnv("ZWOICE_TURN_URLS"), TURNSecret: os.Getenv("ZWOICE_TURN_SECRET"), CloudflareKeyID: os.Getenv("ZWOICE_CF_TURN_KEY_ID"), CloudflareAPIToken: os.Getenv("ZWOICE_CF_TURN_API_TOKEN")}
+		if os.Getenv("RAILWAY_PROJECT_ID") != "" && os.Getenv("RAILWAY_VOLUME_MOUNT_PATH") != dataDir {
+			return fmt.Errorf("ZWOICE_DATA_DIR must match the Railway volume mount path")
+		}
+		acfg := accounts.Config{Path: filepath.Join(dataDir, "accounts.db"), AdminEmail: os.Getenv("ZWOICE_ADMIN_EMAIL")}
+		if limit := os.Getenv("ZWOICE_EMAIL_DAILY_LIMIT"); limit != "" {
+			var err error
+			acfg.DailyEmailLimit, err = strconv.Atoi(limit)
+			if err != nil || acfg.DailyEmailLimit < 1 {
+				return fmt.Errorf("invalid ZWOICE_EMAIL_DAILY_LIMIT")
+			}
+		}
+		apiKey, from := os.Getenv("ZWOICE_RESEND_API_KEY"), os.Getenv("ZWOICE_MAIL_FROM")
+		if apiKey != "" && from != "" {
+			if _, err := mail.ParseAddress(from); err != nil {
+				return fmt.Errorf("invalid ZWOICE_MAIL_FROM")
+			}
+			acfg.Mailer = &accounts.Resend{APIKey: apiKey, From: from}
+		} else {
+			log.Print("Login email delivery is not configured; authentication remains closed")
+		}
+		store, err := accounts.Open(acfg)
+		if err != nil {
+			return fmt.Errorf("account storage: %w", err)
+		}
+		defer store.Close()
+		cfg := broker.Config{Accounts: store, STUNURLs: splitEnv("ZWOICE_STUN_URLS"), TURNURLs: splitEnv("ZWOICE_TURN_URLS"), TURNSecret: os.Getenv("ZWOICE_TURN_SECRET"), CloudflareKeyID: os.Getenv("ZWOICE_CF_TURN_KEY_ID"), CloudflareAPIToken: os.Getenv("ZWOICE_CF_TURN_API_TOKEN")}
 		cfg.TrustRailwayProxy = os.Getenv("RAILWAY_PROJECT_ID") != ""
 		if len(cfg.STUNURLs) == 0 {
 			cfg.STUNURLs = []string{"stun:stun.cloudflare.com:3478"}
@@ -96,7 +110,7 @@ func run() error {
 		address = fmt.Sprintf("127.0.0.1:%d", *port)
 		handler = desktop.Handler(address, cancel)
 	default:
-		return fmt.Errorf("usage: zwoice [desktop|server|invite|version] [flags]")
+		return fmt.Errorf("usage: zwoice [desktop|server|version] [flags]")
 	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

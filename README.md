@@ -9,10 +9,10 @@ Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandene
 ## Benutzen
 
 1. [Zwoice herunterladen](https://zwoice-production.up.railway.app/) und öffnen.
-2. Zwift und Sauce for Zwift starten.
-3. **Fahrt starten** anklicken und das Mikrofon erlauben.
+2. Mit E-Mail und Anmeldecode dein Konto erstellen oder anmelden.
+3. Zwift und Sauce starten, **Fahrt starten** anklicken und das Mikrofon erlauben.
 
-Kein Zwoice-Konto, kein Einladungscode, keine Eingabe von IDs oder Serveradressen. Zwoice übernimmt deinen Fahrer und Anzeigenamen automatisch aus Sauce und wartet auf deine Fahrt. Der Startbildschirm zeigt direkt, wenn Sauce oder die eigene Fahrt noch fehlt. Technische Optionen sind unter „Erweitert“ verborgen.
+Ein verifiziertes Zwoice-Konto ist für Sprachchat und TURN erforderlich. Keine Einladung und keine Eingabe von IDs oder Serveradressen. Auf Wunsch bleibt die Anmeldung auf dem Gerät 30 Tage gültig. Zwoice übernimmt deinen Fahrer und Anzeigenamen automatisch aus Sauce und wartet auf deine Fahrt. Der Startbildschirm zeigt direkt, wenn Sauce oder die eigene Fahrt noch fehlt. Technische Optionen sind unter „Erweitert“ verborgen.
 
 Alle aktiven Zwoice-Nutzer in derselben Zwift-Welt, Event-Gruppe und Sportart können sich in räumlicher Nähe hören. Zwoice verlangt keine Zwift-Passwörter. Sauce und Zwift bleiben separate Anwendungen mit eigener Einrichtung. Die von Sauce gelieferte Identität ist keine kryptografisch verifizierte Zwift-Kontoinhaberschaft; siehe [Sicherheitsmodell](docs/SECURITY.md).
 
@@ -20,6 +20,7 @@ Die **Demo** ist eine ausdrücklich gekennzeichnete Vorschau. Sie benötigt wede
 
 ## Funktionen
 
+- Selbstregistrierung per verifiziertem E-Mail-Code; geschützte Sitzungen und Betreiberansicht für Kontosperren, Sprachzugang und Tageslimits.
 - Eigene Position über das tatsächliche Sauce-Abonnement `athlete/self/v2`, nicht über den beobachteten Kamerafahrer.
 - Dreidimensionale Distanz; volle Lautstärke bis 10 m, sanftes Ausblenden bis 60 m. Bestehende Verbindungen bleiben bis 75 m stumm bereit, um ständiges Neuverbinden zu vermeiden.
 - Höchstens sechs Sprachpartner pro Fahrer, symmetrische Verbindungen und räumliche Indizierung auf dem Server.
@@ -43,10 +44,10 @@ Die Oberfläche liegt unter `http://127.0.0.1:8787`. Für einen zweiten lokalen 
 Lokaler Server in einem weiteren Terminal:
 
 ```sh
-go run ./cmd/zwoice server
+ZWOICE_DATA_DIR=./data go run ./cmd/zwoice server
 ```
 
-Für den lokalen Server unter Einstellungen → Erweitert `http://127.0.0.1:8080` verwenden. Entfernte Server verlangen HTTPS. Ohne konfiguriertes TURN können restriktive Netzwerke keine Sprache verbinden. Der öffentliche Betrieb benötigt keine Signierschlüssel oder vom Betreiber erzeugten Einladungen.
+Für den lokalen Server unter Einstellungen → Erweitert `http://127.0.0.1:8080` verwenden. Entfernte Server verlangen HTTPS. Ohne konfiguriertes TURN können restriktive Netzwerke keine Sprache verbinden. Die Anmeldung benötigt einen Resend-Schlüssel und einen verifizierten Absender; siehe [Betrieb](docs/DEPLOYMENT.md). Ohne Mailkonfiguration bleibt der Zugang geschlossen. Für lokale Tests nutzt `go run ./tests/harness.go` ein simuliertes Postfach, das nicht Bestandteil der App ist.
 
 ## Prüfen und Pakete bauen
 
@@ -57,7 +58,7 @@ npm ci
 npm test
 npx playwright install chromium
 npm run test:browser
-node scripts/release.mjs 1.1.0
+node scripts/release.mjs 1.2.0
 ```
 
 Node/Playwright werden ausschließlich für Entwicklung und Tests benötigt. Die Browser-Integrationstests starten zwei vollständige lokale Clients, einen echten Signalisierungsserver und eine kontrollierte Sauce-Quelle. Sie prüfen tatsächliche WebRTC-Audiopakete, Stummschaltung, Distanzänderung, Weltwechsel, veraltete Daten, Server-Neustart und Freigabe der Audiogeräte.

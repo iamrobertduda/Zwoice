@@ -1,5 +1,5 @@
 const base =
-  "https://github.com/iamrobertduda/Zwoice/releases/download/v1.1.0/";
+  "https://github.com/iamrobertduda/Zwoice/releases/download/v1.2.0/";
 const platforms = {
   windows: {
     label: "Windows",
@@ -17,14 +17,14 @@ const platforms = {
   },
   linux: {
     label: "Linux",
-    file: "zwoice-1.1.0-linux-amd64.tar.gz",
+    file: "zwoice-1.2.0-linux-amd64.tar.gz",
     note: "Für 64-Bit-PCs mit Intel- oder AMD-Prozessor.",
     install:
       "Entpacke das Archiv und starte die enthaltene Datei zwoice. Dein Browser öffnet sich automatisch.",
   },
   "linux-arm": {
     label: "Linux ARM64",
-    file: "zwoice-1.1.0-linux-arm64.tar.gz",
+    file: "zwoice-1.2.0-linux-arm64.tar.gz",
     note: "Für Linux auf 64-Bit-ARM-Geräten.",
     install:
       "Entpacke das Archiv und starte die enthaltene Datei zwoice. Dein Browser öffnet sich automatisch.",
