@@ -40,7 +40,6 @@ export default defineRailway(() => {
     // Railway defaults to On Failure, with ten restart attempts.
     deploy: { drainingSeconds: 10 },
   });
-  zwoice.volumeAttachments![accounts.name].backupSchedules = ["DAILY"];
   return project("Zwoice", {
     resources: [zwoice, accounts],
   });
