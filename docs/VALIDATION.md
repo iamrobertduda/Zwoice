@@ -74,3 +74,5 @@ Die Angaben zu anonymen Cloud-Tests weiter oben sind historisch (v1.1.0). v1.2.0
 - 32 angemeldete Clients über 15 Sekunden: keine unerwarteten Trennungen, etwa 2,0 MiB kombinierter Go-Heap für Server und Lastgenerator, nach Aufräumen etwa 0,5 MiB. Dies ist ein kurzer Integrationslauf, keine Produktions-Lastgarantie.
 
 Ausstehend: echter Mailversand von der verifizierten Betreiber-Domain, Login über diese Zustellung und die weiterhin oben genannten realen Zwift-/Sauce-/Geräte- und Dauerprüfungen. Go-Builds und Browser-Simulation allein ersetzen diese nicht.
+
+Der Kontenserver wurde auf Railway erfolgreich bereitgestellt. Der Live-Healthcheck liefert HTTP 200; `/v1/session` auch mit Athleten-ID und WebSocket-Headern sowie `/v1/auth/me` liefern ohne Anmeldung HTTP 401. Ein persistentes 1-GiB-Volume ist unter `/data` angebunden; tägliche Backups sind deklariert. Die erforderlichen Mailvariablen waren bei dieser Prüfung noch nicht vorhanden.

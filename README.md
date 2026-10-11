@@ -14,6 +14,8 @@ Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandene
 
 Ein verifiziertes Zwoice-Konto ist für Sprachchat und TURN erforderlich. Keine Einladung und keine Eingabe von IDs oder Serveradressen. Auf Wunsch bleibt die Anmeldung auf dem Gerät 30 Tage gültig. Zwoice übernimmt deinen Fahrer und Anzeigenamen automatisch aus Sauce und wartet auf deine Fahrt. Der Startbildschirm zeigt direkt, wenn Sauce oder die eigene Fahrt noch fehlt. Technische Optionen sind unter „Erweitert“ verborgen.
 
+[Anmeldung ansehen](assets/zwoice-login.png) · [Betreiberansicht ansehen](assets/zwoice-admin.png) (mit Testkonten).
+
 Alle aktiven Zwoice-Nutzer in derselben Zwift-Welt, Event-Gruppe und Sportart können sich in räumlicher Nähe hören. Zwoice verlangt keine Zwift-Passwörter. Sauce und Zwift bleiben separate Anwendungen mit eigener Einrichtung. Die von Sauce gelieferte Identität ist keine kryptografisch verifizierte Zwift-Kontoinhaberschaft; siehe [Sicherheitsmodell](docs/SECURITY.md).
 
 Die **Demo** ist eine ausdrücklich gekennzeichnete Vorschau. Sie benötigt weder Sauce noch Mikrofon und überträgt keine Sprache.
