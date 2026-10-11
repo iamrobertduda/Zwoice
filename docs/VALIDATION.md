@@ -15,6 +15,8 @@ Stand: 11. Oktober 2026. Dieses Protokoll unterscheidet ausgeführte Prüfungen 
 | Lastlauf | 1.000 WebSocket-Clients, 90 Sekunden, 44.000 empfangene Nachrichten, keine unerwartete Trennung. |
 | Paketierung | macOS, Windows und Linux jeweils ARM64/AMD64 gebaut. Ausführbare Dateien 6,4–7,1 MiB; Archive mit Prüfsummen. macOS ARM64 lokal gestartet. |
 
+Zusätzlich ist der [GitHub-Prüflauf für Commit 38636f6](https://github.com/iamrobertduda/Zwoice/actions/runs/38120994517) vollständig erfolgreich: Go-Tests mit Race Detector unter Windows, macOS und Linux, Chromium-Integrationstests unter Linux und Paketierung aller sechs Architekturen. Das ist eine Laufzeitprüfung des Go-Kerns auf drei Betriebssystemen, noch keine Prüfung physischer Audiogeräte dort.
+
 Der Cloud-Test verwendet synthetische Mikrofon-Audiodaten und Sauce-Positionsdaten nach dem untersuchten echten API-Schema. Er verwendet **echtes WebRTC, den produktiven Railway-Dienst und Cloudflare TURN**, aber keine reale Zwift-Fahrt und keine zwei verschiedenen Internetanschlüsse. Die simulierten Athleten verwenden eine isolierte Testgruppe und kurzlebige Einladungen. Dauerhafte Secrets werden dafür nur im Prozessspeicher gehalten; Browser-Traces sind im gehosteten Test deaktiviert.
 
 ## Ressourcenmessung
@@ -24,6 +26,7 @@ Apple M4, macOS ARM64, Go 1.26.3:
 - Nähegraph für 1.000 Fahrer: ungefähr 6,59 ms pro Berechnung, 5,61 MB Allokationen pro Berechnung. Dies ist ein isolierter Go-Benchmark, keine gemessene Audio-Ende-zu-Ende-Latenz.
 - Der Lastprozess mit Server **und allen 1.000 simulierten Clients im selben Prozess** nutzte am Ende 60,2 MiB Go-Heap und 4.003 Goroutinen. Nach Trennung und Garbage Collection: 2,9 MiB Heap und eine Goroutine. Diese Heapzahl ist weder Prozess-RSS noch ein Speicherbedarf pro produktivem Server oder Desktop-Client.
 - Der Browser gehört zum Ressourcenverbrauch des Desktop-Clients. Die kleine Binärdatei belegt keine RAM-/CPU-Obergrenze einschließlich Browser, sechs Audioströmen und Zwift.
+- Lokaler macOS-ARM64-Companion in der Demo, ohne aktive Sprache: 13.440 KiB Prozess-RSS und 0,0 % CPU in einer `ps`-Momentaufnahme. **Browser nicht enthalten.** Der zweite Programmstart öffnet keinen zusätzlichen Dienst und beendet sich erfolgreich. Alle sechs Archiv-Prüfsummen und die lokale Ad-hoc-Signatur des macOS-Pakets wurden geprüft.
 
 Reproduzierbar mit:
 

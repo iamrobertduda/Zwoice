@@ -4,6 +4,8 @@
 
 Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandenen Browser. Es bündelt weder Chromium noch eine Node-Runtime. Der Browser übernimmt seine optimierte WebRTC-Audioverarbeitung. Der Go-Prozess verbindet die lokale Sauce-API mit dem Signalisierungsdienst auf Railway. Sprache läuft verschlüsselt direkt zwischen Fahrern, bei Bedarf über TURN.
 
+![Zwoice mit ausdrücklich simulierten Demo-Teilnehmern](assets/zwoice-preview.jpg)
+
 ## Benutzen
 
 1. Paket für dein Betriebssystem entpacken und Zwoice starten. Die Oberfläche öffnet sich automatisch.
