@@ -13,8 +13,8 @@ jobs:
         run: |
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,size=64m --tmpfs /home/node:rw,nosuid,size=32m,uid=1000,gid=1000 \
-            --entrypoint /opt/sauce/sauce4zwift -e ELECTRON_RUN_AS_NODE=1 zwoice-observer:test \
-            /opt/sauce/resources/app.asar/src/headless.mjs --headless --help > /tmp/sauce-help.txt
+            --entrypoint /opt/sauce/sauce4zwift -e ELECTRON_RUN_AS_NODE=1 -e NODE_ENV=production zwoice-observer:test \
+            /opt/sauce/resources/app.asar/src/headless.mjs --headless --help > /tmp/sauce-help.txt 2>&1
           grep -q -- --athlete-id /tmp/sauce-help.txt
           ! grep -q 'World data load error' /tmp/sauce-help.txt
       - name: Verify private settings initialization
