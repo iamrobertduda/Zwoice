@@ -31,6 +31,10 @@ type riderReport struct {
 	histogram  [31]int
 	lastFresh  time.Time
 }
+
+const sampleInterval = 250 * time.Millisecond
+const runtimeInterval = 5 * time.Second
+
 type report struct {
 	Started                time.Time      `json:"started"`
 	Seconds                float64        `json:"seconds"`
@@ -45,7 +49,17 @@ type report struct {
 	Qualified              bool           `json:"qualified"`
 	DistributionSamples    int            `json:"distributionSamples"`
 	TotalSamples           int            `json:"totalSamples"`
+	ExpectedSamples        int            `json:"expectedSamples"`
+	MissingSamples         int            `json:"missingSamples"`
+	SamplingCoverage       float64        `json:"samplingCoverage"`
+	MaxSamplingGapMS       int64          `json:"maxSamplingGapMs"`
+	ExpectedRuntimeSamples int            `json:"expectedRuntimeSamples"`
 	Scope                  string         `json:"scope"`
+	started                time.Time
+	lastSample             time.Time
+	lastSampleSlot         int64
+	lastRuntimeSlot        int64
+	worlds                 map[int]bool
 }
 
 func main() {
@@ -114,14 +128,14 @@ func run() error {
 	if !wait(ctx, *warmup) {
 		return fmt.Errorf("interrupted before measurement")
 	}
-	result := report{Started: time.Now().UTC(), WarmupSeconds: warmup.Seconds(), Riders: riders, Scope: "Real Sauce positions. No audio test. CPU/RSS cover responding Sauce processes only; OS and worker excluded. Qualification requires 10 or 20 riders, >=30 min, >=2 worlds, >=4 groups separated by 300m or world/event boundaries, >=99% fresh samples for every rider, no gap >3s, distribution present for >=95% of samples, and complete runtime telemetry >=95%. Licensing is a separate release gate."}
+	started := time.Now()
+	result := report{started: started, lastSample: started, worlds: map[int]bool{}, Started: started.UTC(), WarmupSeconds: warmup.Seconds(), Riders: riders, Scope: "Real Sauce positions. No audio test. CPU/RSS cover responding Sauce processes only; OS and worker excluded. Qualification requires 10 or 20 riders, >=30 min, >=2 worlds, >=4 groups separated by 300m or world/event boundaries, >=99% fresh samples for every rider, no gap >3s, distribution present for >=95% of expected samples, complete runtime telemetry >=95% of expected intervals, position sampling coverage >=99%, and no measurement pause >1s. Missing samples count against freshness. p95 age covers fresh observations only. Licensing is a separate release gate."}
 	for _, r := range riders {
-		r.lastFresh = result.Started
+		r.lastFresh = started
 	}
-	worlds := map[int]bool{}
-	sample := time.NewTicker(250 * time.Millisecond)
+	sample := time.NewTicker(sampleInterval)
 	defer sample.Stop()
-	telemetry := time.NewTicker(5 * time.Second)
+	telemetry := time.NewTicker(runtimeInterval)
 	defer telemetry.Stop()
 	end := time.NewTimer(*duration)
 	defer end.Stop()
@@ -132,63 +146,15 @@ func run() error {
 			running = false
 		case <-end.C:
 			running = false
-		case now := <-sample.C:
-			var positions []proximity.Position
-			sampleWorlds := map[int]bool{}
-			result.TotalSamples++
-			for _, r := range riders {
-				r.Samples++
-				p, fresh := coordinator.Latest(r.AthleteID)
-				gap := now.Sub(r.lastFresh).Milliseconds()
-				if gap > r.MaxGapMS {
-					r.MaxGapMS = gap
-				}
-				if !fresh {
-					continue
-				}
-				r.Fresh++
-				r.lastFresh = now
-				age := max(0, int(now.Sub(p.Observed).Milliseconds()))
-				r.histogram[min(age/100, 30)]++
-				pos := p.Sample.Position
-				worlds[pos.Course] = true
-				positions = append(positions, pos)
-				sampleWorlds[pos.Course] = true
-			}
-			groups := separatedGroups(positions)
-			result.PeakSeparatedGroups = max(result.PeakSeparatedGroups, groups)
-			if len(sampleWorlds) >= 2 && groups >= 4 {
-				result.DistributionSamples++
-			}
+		case <-sample.C:
+			// A ticker can drop ticks under load. Use actual observation time, not the
+			// old timestamp of a buffered tick, and never count one interval twice.
+			result.observe(time.Now(), coordinator.Latest)
 		case <-telemetry.C:
-			result.RuntimeSamples++
-			if h := coordinator.Status().Runtime; h != nil {
-				result.PeakSauceRSSBytes = max(result.PeakSauceRSSBytes, h.RSSBytes)
-				result.PeakSauceCPUPercent = max(result.PeakSauceCPUPercent, h.CPUPercent)
-				if h.Processes == len(riders) && h.Responding == len(riders) && h.CPUSamples == len(riders) {
-					result.CompleteRuntimeSamples++
-				}
-			}
+			result.observeRuntime(time.Now(), coordinator.Status().Runtime)
 		}
 	}
-	result.Seconds = time.Since(result.Started).Seconds()
-	result.Worlds = len(worlds)
-	result.Qualified = ctx.Err() == nil && (len(riders) == 10 || len(riders) == 20) && result.Seconds >= 1800 && result.TotalSamples > 0 && float64(result.DistributionSamples)/float64(result.TotalSamples) >= 0.95 && result.RuntimeSamples > 0 && float64(result.CompleteRuntimeSamples)/float64(result.RuntimeSamples) >= 0.95
-	for _, r := range riders {
-		if r.Samples > 0 {
-			r.FreshRatio = float64(r.Fresh) / float64(r.Samples)
-		}
-		total := 0
-		for bucket, count := range r.histogram {
-			total += count
-			if r.Fresh > 0 && float64(total) >= float64(r.Fresh)*0.95 {
-				r.P95AgeMS = (bucket + 1) * 100
-				break
-			}
-		}
-		r.MaxGapMS = max(r.MaxGapMS, time.Since(r.lastFresh).Milliseconds())
-		result.Qualified = result.Qualified && r.FreshRatio >= 0.99 && r.MaxGapMS <= 3000
-	}
+	result.finish(time.Now(), ctx.Err() != nil)
 	data, _ := json.MarshalIndent(result, "", "  ")
 	file, err := os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
@@ -207,6 +173,86 @@ func run() error {
 		return fmt.Errorf("capacity not qualified; inspect the saved measurements")
 	}
 	return nil
+}
+
+func (r *report) observe(now time.Time, latest func(int64) (observer.Snapshot, bool)) {
+	slot := int64(now.Sub(r.started) / sampleInterval)
+	if slot <= r.lastSampleSlot {
+		return
+	}
+	r.lastSampleSlot = slot
+	r.MaxSamplingGapMS = max(r.MaxSamplingGapMS, now.Sub(r.lastSample).Milliseconds())
+	r.lastSample = now
+	var positions []proximity.Position
+	sampleWorlds := map[int]bool{}
+	r.TotalSamples++
+	for _, rider := range r.Riders {
+		rider.Samples++
+		p, fresh := latest(rider.AthleteID)
+		rider.MaxGapMS = max(rider.MaxGapMS, now.Sub(rider.lastFresh).Milliseconds())
+		if !fresh {
+			continue
+		}
+		rider.Fresh++
+		rider.lastFresh = now
+		age := max(0, int(now.Sub(p.Observed).Milliseconds()))
+		rider.histogram[min(age/100, 30)]++
+		pos := p.Sample.Position
+		r.worlds[pos.Course] = true
+		sampleWorlds[pos.Course] = true
+		positions = append(positions, pos)
+	}
+	groups := separatedGroups(positions)
+	r.PeakSeparatedGroups = max(r.PeakSeparatedGroups, groups)
+	if len(sampleWorlds) >= 2 && groups >= 4 {
+		r.DistributionSamples++
+	}
+}
+
+func (r *report) observeRuntime(now time.Time, h *observer.Health) {
+	slot := int64(now.Sub(r.started) / runtimeInterval)
+	if slot <= r.lastRuntimeSlot {
+		return
+	}
+	r.lastRuntimeSlot = slot
+	r.RuntimeSamples++
+	if h == nil {
+		return
+	}
+	r.PeakSauceRSSBytes = max(r.PeakSauceRSSBytes, h.RSSBytes)
+	r.PeakSauceCPUPercent = max(r.PeakSauceCPUPercent, h.CPUPercent)
+	if h.Processes == len(r.Riders) && h.Responding == len(r.Riders) && h.CPUSamples == len(r.Riders) {
+		r.CompleteRuntimeSamples++
+	}
+}
+
+func (r *report) finish(now time.Time, interrupted bool) {
+	elapsed := now.Sub(r.started)
+	r.Seconds = elapsed.Seconds()
+	r.Worlds = len(r.worlds)
+	r.ExpectedSamples = int(elapsed / sampleInterval)
+	r.ExpectedRuntimeSamples = int(elapsed / runtimeInterval)
+	r.MissingSamples = max(0, r.ExpectedSamples-r.TotalSamples)
+	r.MaxSamplingGapMS = max(r.MaxSamplingGapMS, now.Sub(r.lastSample).Milliseconds())
+	if r.ExpectedSamples > 0 {
+		r.SamplingCoverage = float64(r.TotalSamples) / float64(r.ExpectedSamples)
+	}
+	r.Qualified = !interrupted && (len(r.Riders) == 10 || len(r.Riders) == 20) && elapsed >= 30*time.Minute && r.SamplingCoverage >= 0.99 && r.MaxSamplingGapMS <= 1000 && r.ExpectedSamples > 0 && float64(r.DistributionSamples)/float64(r.ExpectedSamples) >= 0.95 && r.ExpectedRuntimeSamples > 0 && float64(r.CompleteRuntimeSamples)/float64(r.ExpectedRuntimeSamples) >= 0.95
+	for _, rider := range r.Riders {
+		if r.ExpectedSamples > 0 {
+			rider.FreshRatio = float64(rider.Fresh) / float64(r.ExpectedSamples)
+		}
+		total := 0
+		for bucket, count := range rider.histogram {
+			total += count
+			if rider.Fresh > 0 && float64(total) >= float64(rider.Fresh)*0.95 {
+				rider.P95AgeMS = (bucket + 1) * 100
+				break
+			}
+		}
+		rider.MaxGapMS = max(rider.MaxGapMS, now.Sub(rider.lastFresh).Milliseconds())
+		r.Qualified = r.Qualified && rider.FreshRatio >= 0.99 && rider.MaxGapMS <= 3000
+	}
 }
 
 func wait(ctx context.Context, d time.Duration) bool {

@@ -115,3 +115,12 @@ Neu lokal erfolgreich geprüft:
 - Offizielles Linux-AppImage 2.3.4 heruntergeladen und gegen SHA-256 `f811e7418268247fd44bc7f34acb9d9b5e40765043d70315d74e6edc2d64021b` geprüft. Für das private Linux-Image gibt es einen zusätzlichen CI-Laufzeittest ohne Credentials und Netzwerk. Ein heruntergeladenes AppImage allein ist noch kein bestandener Linux-Lauf.
 
 `go run ./tests/observer-live` ist der separate reale Messtest; Anforderungen und Befehle stehen in [OBSERVERS.md](OBSERVERS.md). Es wurde **kein erfolgreicher realer Kapazitätsbericht erzeugt**: Betreiberkonten, Host und reale Testfahrer stehen noch nicht zur Verfügung. Ebenso wurde keine eindeutige öffentliche Freigabe für Zwoices zentralen Mehrnutzerbetrieb gefunden. Der Code bleibt bis zum Abschluss dieser Punkte ein unveröffentlichter Umstellungsstand.
+
+
+### Kapazitätsmessung gegen ausgelassene Messpunkte abgesichert
+
+Die automatische Plattformprüfung für Quellstand `f06286d` ist [mit allen sieben Jobs erfolgreich](https://github.com/iamrobertduda/Zwoice/actions/runs/38230115999), einschließlich des offiziellen Linux-Headless-Pakets ohne Netzwerk/Zugangsdaten und der privaten SQLite-Konfiguration. Das ist weiterhin kein authentifizierter Zwift-Fahrtest.
+
+Bei der anschließenden Prüfung des Messwerkzeugs wurde ein möglicher falscher Erfolg unter Überlastung korrigiert: Go-Ticker können Messpunkte auslassen. Frische, räumliche Verteilung und Telemetrie werden deshalb gegen die erwarteten Intervalle der tatsächlichen Laufzeit ausgewertet. Doppelte Messungen im selben Intervall zählen nicht zusätzlich. Fehlende Messpunkte und die längste Pause des Messprozesses stehen im Bericht; weniger als 99 % Positionsabdeckung oder eine Messpause über eine Sekunde verhindern eine Qualifikation. Für Zeitabstände bleibt die monotone Uhr erhalten.
+
+Lokal bestanden: `go test -race ./tests/observer-live -count=1` und `go vet ./tests/observer-live`. Regressionen prüfen halbierte Messfrequenz, doppelte Messpunkte, nahezu vollständigen Stillstand des Messprozesses, einzelne längere Pausen, fehlende CPU/RSS-Intervalle, Kurzlauf und Abbruch. Ein vollständig beobachteter synthetischer Zeitverlauf prüft ausschließlich die Auswertung. Diese Tests stellen keine echte Sauce-Kapazitätsmessung dar.
