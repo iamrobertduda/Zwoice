@@ -78,3 +78,15 @@ Ausstehend: echter Mailversand von der verifizierten Betreiber-Domain, Login üb
 Der Kontenserver wurde auf Railway erfolgreich bereitgestellt. Der Live-Healthcheck liefert HTTP 200; `/v1/session` auch mit Athleten-ID und WebSocket-Headern sowie `/v1/auth/me` liefern ohne Anmeldung HTTP 401. Ein persistentes 1-GiB-Volume ist unter `/data` angebunden. Die direkte Railway-API-Prüfung zeigte: Backup-Zeitpläne sind nur für Pro-Workspaces verfügbar, daher sind im aktuellen Hobby-Tarif keine automatischen Backups aktiv. Die erforderlichen Mailvariablen waren bei dieser Prüfung noch nicht vorhanden.
 
 Der abschließende [Prüflauf 38124922236](https://github.com/iamrobertduda/Zwoice/actions/runs/38124922236) für Quellstand `1a61656` besteht alle sechs Jobs einschließlich Windows-Installation/Deinstallation, Go-Race-Tests auf Windows/macOS/Linux, sechs Browsertests und Paketbau. Alle neun veröffentlichten Assets von [v1.2.0](https://github.com/iamrobertduda/Zwoice/releases/tag/v1.2.0) wurden anhand ihrer GitHub-SHA-256-Digests mit den lokalen Dateien verglichen; die primären Downloads liefern HTTP 200.
+
+## Änderung v1.3.0: Website und App im neuen Design
+
+Die Landingpage orientiert sich an der am 12. Oktober 2026 geprüften [Discord-Website](https://discord.com/), die Desktop-Oberfläche an der [aktuellen Discord-Desktopdarstellung](https://support.discord.com/hc/en-us/articles/207260127-How-to-Change-Discord-Color-Themes-and-Customize-Appearance-Settings). Eigenes Zwoice-Logo, eigene Illustrationen und unveränderte Anmeldung/Sprachfunktionen. Keine Discord-Assets oder Laufzeitbibliotheken.
+
+- Dunkle App, kompakte Navigation, Kontobereich, Mikrofon-, Teilnehmer-, Fehler- und Verbindungszustände sowie alle Dialoge überarbeitet.
+- Responsive Website mit GitHub-Button und plattformspezifischen Downloads. Geprüft bei 320, 390, 768, 1024 und 1440 Pixeln Breite, ohne abgeschnittene Überschriften oder horizontales Scrollen.
+- Zwei lokal eingebundene WOFF2-Schriften, insgesamt 46.772 Bytes; Lizenztexte in den Auslieferungshinweisen. Kein externer Font-Dienst.
+- Lokal bestanden: Go Vet, alle Go-Race-Tests, zwei JavaScript-Tests, Syntaxprüfung und alle sechs Browser-Szenarien (einschließlich echter WebRTC-Audioverbindung, Mikrofonkontrolle, Entfernung, Wiederverbindung, verifizierter Anmeldung und Betreiberregeln).
+- Screenshots von Website, Demo, Anmeldung, Einstellungen und Betreiberansicht visuell geprüft. Die Konten auf den Screenshots sind ausschließlich lokale Testkonten.
+
+Die bestehende Mailkonfiguration auf Railway ist weiterhin Voraussetzung für echte Registrierungen. Dieses Design-Update verändert keine Zugangsregeln oder Infrastrukturvariablen.

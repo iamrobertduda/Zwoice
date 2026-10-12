@@ -47,6 +47,7 @@ test("responsive demo, distance fading, mutes and keyboard-accessible setup", as
   ).toHaveCount(2);
   await page.locator("#demoDistance").fill("0");
   await page.locator("#demoDistance").dispatchEvent("input");
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/zwoice-desktop.png",
     fullPage: true,
@@ -61,8 +62,10 @@ test("responsive demo, distance fading, mutes and keyboard-accessible setup", as
     path: "test-results/zwoice-mobile.png",
     fullPage: true,
   });
+  await expect(page.locator("#accountButton")).toBeVisible();
   await page.locator("#settingsNav").click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await page.screenshot({ path: "test-results/zwoice-settings-mobile.png" });
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
   expect(errors).toEqual([]);
@@ -408,6 +411,10 @@ test("public download page offers one installer per desktop platform", async ({
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "Dein nächstes Gespräch",
   );
+  await expect(
+    page.getByRole("link", { name: "GitHub", exact: true }),
+  ).toHaveAttribute("href", "https://github.com/iamrobertduda/Zwoice");
+  await page.evaluate(() => document.fonts.ready);
   await page.locator("#platform").selectOption("macos");
   await expect(page.locator("#downloadButton")).toHaveAttribute(
     "href",
@@ -432,6 +439,22 @@ test("public download page offers one installer per desktop platform", async ({
     path: "test-results/zwoice-downloads-mobile.png",
     fullPage: true,
   });
+  for (const width of [320, 768, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    const clippedHeadings = await page
+      .locator("h1, h2")
+      .evaluateAll((elements) =>
+        elements
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => el.textContent),
+      );
+    expect(clippedHeadings).toEqual([]);
+  }
 });
 
 test("email signup, private remembered session, logout and operator controls", async ({

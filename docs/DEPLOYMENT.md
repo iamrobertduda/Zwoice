@@ -65,7 +65,7 @@ Ohne vollständige Mailkonfiguration startet der Server, verweigert aber neue An
 
 Konten, Sperren und Sitzungshashes überleben Deployments. Cloudflare-Grants alter Verbindungen werden beim Neustart zum Widerruf vorgemerkt. Ein Railway-Volume bindet den Server an eine Replik; Wartung kann kurze Unterbrechungen auslösen. Railway hat beim Prüfen der Sicherungsfunktion gemeldet, dass manuelle Volume-Backups und Backup-Zeitpläne nur im Pro-Tarif verfügbar sind. Im aktuellen Hobby-Tarif sind daher **keine automatischen Backups aktiv**. Das persistente Volume schützt gegen den Verlust bei gewöhnlichen Deployments, ersetzt aber keine separate Sicherung. Bei einem späteren Pro-Wechsel kann ein täglicher Railway-Backup-Zeitplan aktiviert werden. Wiederherstellungen bei gestopptem Dienst vornehmen; eine Live-Kopie nur der bbolt-Datei ist kein garantiert konsistentes Backup.
 
-Die öffentliche Startseite liefert Downloadlinks für v1.2.0. Pakete werden über GitHub Releases verteilt. Der gesamte Sprachzugang bleibt serverseitig geschützt, auch wenn jemand den Client verändert oder die UI umgeht. Grenzen und Vertrauensmodell stehen in [SECURITY.md](SECURITY.md).
+Die öffentliche Startseite liefert Downloadlinks für v1.3.0. Pakete werden über GitHub Releases verteilt. Der gesamte Sprachzugang bleibt serverseitig geschützt, auch wenn jemand den Client verändert oder die UI umgeht. Grenzen und Vertrauensmodell stehen in [SECURITY.md](SECURITY.md).
 
 ## Freigabe
 

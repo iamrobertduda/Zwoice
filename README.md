@@ -4,7 +4,9 @@
 
 Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandenen Browser. Es bündelt weder Chromium noch eine Node-Runtime. Der Browser übernimmt seine optimierte WebRTC-Audioverarbeitung. Der Go-Prozess verbindet die lokale Sauce-API mit dem Signalisierungsdienst auf Railway. Sprache läuft verschlüsselt direkt zwischen Fahrern, bei Bedarf über TURN.
 
-![Zwoice mit ausdrücklich simulierten Demo-Teilnehmern](assets/zwoice-preview.jpg)
+![Zwoice mit ausdrücklich simulierten Demo-Teilnehmern](assets/zwoice-preview.png)
+
+Die Oberfläche und die [Website](assets/zwoice-website.png) verwenden ein gemeinsames dunkles Design mit blauvioletten Akzenten. Schriften und Grafiken werden lokal ausgeliefert; es kommen keine zusätzlichen Laufzeitbibliotheken hinzu.
 
 ## Benutzen
 
@@ -31,7 +33,7 @@ Die **Demo** ist eine ausdrücklich gekennzeichnete Vorschau. Sie benötigt wede
 - Automatisches Wiederverbinden mit Backoff; Stummschalten bei veralteten Positionsdaten, Verbindungsverlust oder Geräteproblemen.
 - Optionale TURN-only-Verbindungen zum Schutz der IP-Adresse gegenüber anderen Fahrern.
 - Kurzlebige TURN-Zugangsdaten aus Cloudflare oder coturn, mit Erneuerung während langer Sitzungen.
-- Keine Audioaufzeichnung, Analyse-Skripte, externen Schriftarten oder persistent gespeicherten Positionsverläufe.
+- Keine Audioaufzeichnung, Analyse-Skripte, extern geladenen Schriftarten oder persistent gespeicherten Positionsverläufe.
 
 ## Lokal entwickeln
 
@@ -60,7 +62,7 @@ npm ci
 npm test
 npx playwright install chromium
 npm run test:browser
-node scripts/release.mjs 1.2.0
+node scripts/release.mjs 1.3.0
 ```
 
 Node/Playwright werden ausschließlich für Entwicklung und Tests benötigt. Die Browser-Integrationstests starten zwei vollständige lokale Clients, einen echten Signalisierungsserver und eine kontrollierte Sauce-Quelle. Sie prüfen tatsächliche WebRTC-Audiopakete, Stummschaltung, Distanzänderung, Weltwechsel, veraltete Daten, Server-Neustart und Freigabe der Audiogeräte.
