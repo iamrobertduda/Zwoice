@@ -22,12 +22,14 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/auth"
+	"github.com/iamrobertduda/Zwoice/internal/observer"
 	"github.com/iamrobertduda/Zwoice/internal/proximity"
 	"github.com/iamrobertduda/Zwoice/internal/web"
 )
 
 type Config struct {
 	Accounts     *accounts.Store
+	Observer     *observer.Coordinator
 	TURNEndpoint string // Optional transport override for controlled tests.
 
 	Key                []byte
@@ -55,16 +57,19 @@ type client struct {
 	connectionID string
 	checkedAt    time.Time
 
-	conn         *websocket.Conn
-	claims       auth.Claims
-	rider        proximity.Rider
-	out          chan any
-	indexed      bool
-	cell         proximity.Cell
-	fullWarned   bool
-	lastPosition time.Time
-	lastPeers    []proximity.Peer
-	lastSent     time.Time
+	conn           *websocket.Conn
+	claims         auth.Claims
+	rider          proximity.Rider
+	out            chan any
+	indexed        bool
+	cell           proximity.Cell
+	fullWarned     bool
+	lastPosition   time.Time
+	lastPeers      []proximity.Peer
+	lastSent       time.Time
+	lastWorldTime  int64
+	positionFresh  bool
+	positionNotice time.Time
 }
 
 type Hub struct {
@@ -94,11 +99,15 @@ func (h *Hub) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","service":"zwoice","protocol":1}`))
+		w.Write([]byte(`{"status":"ok","service":"zwoice","protocol":2}`))
 	})
 	mux.HandleFunc("GET /v1/session", h.session)
 	mux.HandleFunc("POST /v1/auth/", h.accountHandler)
 	mux.HandleFunc("POST /v1/admin/", h.accountHandler)
+	mux.HandleFunc("POST /v1/zwift/", h.zwiftHandler)
+	if h.cfg.Observer != nil {
+		mux.HandleFunc("GET /internal/observer", h.cfg.Observer.Handler)
+	}
 	mux.Handle("GET /", web.DownloadHandler())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -108,6 +117,9 @@ func (h *Hub) Handler() http.Handler {
 }
 
 func (h *Hub) Run(ctx context.Context) {
+	if h.cfg.Observer != nil {
+		defer h.cfg.Observer.Close()
+	}
 	if h.cfg.Accounts != nil {
 		go h.revokeLoop(ctx)
 	}
@@ -146,11 +158,29 @@ func (h *Hub) tick(now time.Time) {
 			c.checkedAt = now
 			a, _, err := h.cfg.Accounts.Authenticate(c.sessionToken)
 			policy, policyErr := h.cfg.Accounts.Policy()
-			if err != nil || policyErr != nil || !a.TURNAllowed || !policy.TURNEnabled {
+			if err != nil || policyErr != nil || !a.TURNAllowed || !policy.TURNEnabled || a.Zwift == nil || a.Zwift.AthleteID != c.claims.AthleteID {
 				c.conn.CloseNow()
 				h.removeCell(c)
 				delete(h.clients, id)
 				continue
+			}
+		}
+		if h.cfg.Observer != nil {
+			p, fresh := h.cfg.Observer.Latest(c.claims.AthleteID)
+			if fresh && p.Sample.WorldTime > c.lastWorldTime {
+				c.lastWorldTime = p.Sample.WorldTime
+				h.applyPosition(c, &p.Sample.Position, p.Observed)
+				if p.Sample.Name != "" {
+					c.rider.Name = cleanName(p.Sample.Name)
+				}
+			}
+			if !fresh {
+				h.removeCell(c)
+				c.rider.Updated = time.Time{}
+			}
+			if fresh != c.positionFresh || now.Sub(c.positionNotice) >= 2*time.Second {
+				c.positionFresh, c.positionNotice = fresh, now
+				h.enqueue(c, map[string]any{"type": "positionSource", "connected": fresh, "athleteId": c.claims.AthleteID, "course": c.rider.Position.Course, "name": c.rider.Name})
 			}
 		}
 		if now.Sub(c.rider.Updated) >= proximity.StaleAfter {
@@ -203,9 +233,13 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		accountError(w, err)
 		return
 	}
-	athleteID, err := strconv.ParseInt(r.Header.Get("Zwoice-Athlete-ID"), 10, 64)
-	if err != nil || athleteID <= 0 || athleteID > 9007199254740991 {
-		http.Error(w, "invalid athlete", 400)
+	if account.Zwift == nil {
+		http.Error(w, "link Zwift rider first", 412)
+		return
+	}
+	athleteID := account.Zwift.AthleteID
+	if h.cfg.Observer == nil {
+		http.Error(w, "observer unavailable", 503)
 		return
 	}
 	claims := auth.Claims{AthleteID: athleteID, Cohort: "public", Expires: login.Expires}
@@ -254,6 +288,12 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "already connected or service at capacity", 409)
 		return
 	}
+	releaseObserver, err := h.cfg.Observer.Acquire(athleteID)
+	if err != nil {
+		http.Error(w, err.Error(), 503)
+		return
+	}
+	defer releaseObserver()
 	select {
 	case h.joining <- struct{}{}:
 	default:
@@ -271,8 +311,13 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Recheck after the external request; logout/blocking may have raced it.
-	if _, _, err = h.cfg.Accounts.Authenticate(sessionToken); err != nil {
+	current, _, err := h.cfg.Accounts.Authenticate(sessionToken)
+	if err != nil {
 		accountError(w, err)
+		return
+	}
+	if current.Zwift == nil || current.Zwift.AthleteID != athleteID {
+		http.Error(w, "rider link changed", 412)
 		return
 	}
 	h.mu.Lock()
@@ -288,7 +333,8 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.SetReadLimit(24 * 1024)
 	c := &client{sessionToken: sessionToken, accountID: account.ID, connectionID: connectionID, checkedAt: time.Now(), conn: conn, claims: claims, rider: proximity.Rider{ID: id, Cohort: claims.Cohort, Name: "Rider " + id}, out: make(chan any, 32)}
-	h.enqueue(c, map[string]any{"type": "welcome", "id": id, "iceServers": ice, "maxPeers": proximity.MaxPeers, "protocol": 1})
+	c.rider.Name = cleanName(account.Zwift.Name)
+	h.enqueue(c, map[string]any{"type": "welcome", "id": id, "iceServers": ice, "maxPeers": proximity.MaxPeers, "protocol": 2})
 	h.clients[id] = c
 	delete(h.pending, id)
 	admitted = true
@@ -367,66 +413,26 @@ func (h *Hub) session(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func cleanName(name string) string {
+	name = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, name))
+	if n := []rune(name); len(n) > 32 {
+		name = string(n[:32])
+	}
+	return name
+}
+
 func (h *Hub) handle(c *client, m Message, now time.Time) {
 	switch m.Type {
-	case "hello":
-		name := strings.TrimSpace(strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
-				return -1
-			}
-			return r
-		}, m.Name))
-		if n := []rune(name); len(n) > 32 {
-			name = string(n[:32])
-		}
-		if name != "" {
-			c.rider.Name = name
-		}
 	case "voice":
 		c.rider.Active = m.Active
 		if !m.Active {
 			h.removeCell(c)
 		}
-	case "position":
-		if m.Position == nil {
-			h.removeCell(c)
-			c.rider.Updated = time.Time{}
-			return
-		}
-		if !m.Position.Valid() {
-			return
-		}
-		if now.Sub(c.lastPosition) < 200*time.Millisecond {
-			return
-		}
-		c.lastPosition = now
-		// A malicious client cannot force unbounded grid density.
-		next := c.rider
-		next.Position = *m.Position
-		next.Updated = now
-		key := proximity.CellFor(next)
-		if next.Active && (!c.indexed || c.cell != key) && len(h.cells[key]) >= proximity.MaxCellOccupancy {
-			h.removeCell(c)
-			c.rider.Updated = time.Time{}
-			if !c.fullWarned {
-				h.enqueue(c, map[string]any{"type": "error", "fatal": false, "message": "Diese lokale Gruppe ist voll. Bitte etwas Abstand gewinnen."})
-				c.fullWarned = true
-			}
-			return
-		}
-		c.fullWarned = false
-		if c.indexed && c.cell != key {
-			h.removeCell(c)
-		}
-		if next.Active && !c.indexed {
-			if h.cells[key] == nil {
-				h.cells[key] = make(map[string]struct{})
-			}
-			h.cells[key][next.ID] = struct{}{}
-			c.cell = key
-			c.indexed = true
-		}
-		c.rider = next
 	case "signal":
 		target := h.clients[m.To]
 		if target == nil || !proximity.Near(c.rider, target.rider, now, proximity.LeaveRadius) {
@@ -439,11 +445,49 @@ func (h *Hub) handle(c *client, m Message, now time.Time) {
 		if !h.edges[proximity.Edge{A: a, B: b}] {
 			return
 		}
-		// The payload remains opaque SDP/ICE; authorization is the current edge.
 		if len(m.Payload) > 0 && len(m.Payload) <= 20*1024 && json.Valid(m.Payload) {
 			h.enqueue(target, map[string]any{"type": "signal", "from": c.rider.ID, "payload": m.Payload})
 		}
 	}
+}
+
+func (h *Hub) applyPosition(c *client, position *proximity.Position, now time.Time) {
+	if position == nil {
+		h.removeCell(c)
+		c.rider.Updated = time.Time{}
+		return
+	}
+	if !position.Valid() {
+		return
+	}
+	c.lastPosition = now
+	// A malicious client cannot force unbounded grid density.
+	next := c.rider
+	next.Position = *position
+	next.Updated = now
+	key := proximity.CellFor(next)
+	if next.Active && (!c.indexed || c.cell != key) && len(h.cells[key]) >= proximity.MaxCellOccupancy {
+		h.removeCell(c)
+		c.rider.Updated = time.Time{}
+		if !c.fullWarned {
+			h.enqueue(c, map[string]any{"type": "error", "fatal": false, "message": "Diese lokale Gruppe ist voll. Bitte etwas Abstand gewinnen."})
+			c.fullWarned = true
+		}
+		return
+	}
+	c.fullWarned = false
+	if c.indexed && c.cell != key {
+		h.removeCell(c)
+	}
+	if next.Active && !c.indexed {
+		if h.cells[key] == nil {
+			h.cells[key] = make(map[string]struct{})
+		}
+		h.cells[key][next.ID] = struct{}{}
+		c.cell = key
+		c.indexed = true
+	}
+	c.rider = next
 }
 
 func (h *Hub) removeCell(c *client) {

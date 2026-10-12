@@ -3,6 +3,7 @@ async function login(
   page,
   request,
   email = `rider-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`,
+  riderID = 0,
 ) {
   await page.locator("#accountButton").click();
   await page.locator("#loginEmail").fill(email);
@@ -23,6 +24,30 @@ async function login(
     .click();
   await expect(page.locator("#accountDialog")).not.toBeVisible();
   await expect(page.locator("#accountButton")).toHaveText("Dein Konto");
+  await expect(page.locator("#zwiftDialog")).toBeVisible();
+  if (!riderID) { await page.keyboard.press("Escape"); return; }
+  await page.locator("#zwiftQuery").fill(String(riderID));
+  await page.getByRole("button", { name: "Fahrer suchen →" }).click();
+  await page.locator(".rider-result").click();
+  await expect(page.locator("#zwiftProofForm")).toBeVisible();
+  // A fresh profile response, not a client assertion, must prove ownership.
+  await page.getByRole("button", { name: "Code ist eingetragen →" }).click();
+  await expect(page.locator("#zwiftMessage")).toContainText("noch nicht");
+  const proof = await page.locator("#zwiftProofCode").textContent();
+  await request.post(`http://127.0.0.1:11080/profile?id=${riderID}&code=${encodeURIComponent(proof)}`);
+  await page.screenshot({ path: `test-results/zwoice-link-${riderID}.png` });
+  if (riderID === 1001) {
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.locator("#zwiftDialog").evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
+    await page.screenshot({ path: "test-results/zwoice-link-mobile.png" });
+    await page.setViewportSize(viewport);
+  }
+  await page.getByRole("button", { name: "Code ist eingetragen →" }).click();
+  await expect(page.locator("#zwiftLinked")).toBeVisible();
+  await page.getByRole("button", { name: "Fertig", exact: true }).click();
+  await request.post(`http://127.0.0.1:11080/profile?id=${riderID}&code=`);
+
 }
 
 test("responsive demo, distance fading, mutes and keyboard-accessible setup", async ({
@@ -94,7 +119,6 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
             "zwoice.settings",
             JSON.stringify({
               ...config,
-              sauce: `http://127.0.0.1:${11081 + i}`,
               volume: 80,
               relayOnly,
             }),
@@ -161,7 +185,7 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
         },
       );
       await pages[i].goto(`http://127.0.0.1:${18787 + i}`);
-      await login(pages[i], request);
+      await login(pages[i], request, undefined, 1001 + i);
       await pages[i].getByRole("button", { name: /Fahrt starten/ }).click();
     }
     const [a, b] = pages;
@@ -301,6 +325,11 @@ test("two real WebRTC clients: Opus audio, controls, movement, stale source, rec
     await expect(b.locator(".person-row")).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
+    for (const p of pages) await p.evaluate(async () => {
+      const config = await (await fetch("/config.json")).json();
+      const stored = JSON.parse(localStorage.getItem("zwoice.settings") || "{}");
+      await fetch("/api/account/zwift/unlink", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({server: stored.server || config.server}) });
+    }).catch(() => {});
     await Promise.all(contexts.map((c) => c.close()));
     await request.post(
       "http://127.0.0.1:11080/move?id=1002&x=8&course=1&frozen=false",
@@ -316,7 +345,7 @@ test("first launch verifies an account without invitations or settings and waits
     await request.get("http://127.0.0.1:11080/config")
   ).json();
   await page.route("**/config.json", (route) =>
-    route.fulfill({ json: { ...config, sauce: "http://127.0.0.1:11081" } }),
+    route.fulfill({ json: config }),
   );
   await request.post("http://127.0.0.1:11080/move?id=1001&riding=false");
   await page.addInitScript(() => {
@@ -331,9 +360,9 @@ test("first launch verifies an account without invitations or settings and waits
   });
   try {
     await page.goto("http://127.0.0.1:18787");
-    await login(page, request);
+    await login(page, request, undefined, 1001);
     await expect(page.locator("#setupTitle")).toHaveText(
-      "Sauce ist da. Jetzt noch losfahren.",
+      "Bereit, wenn du es bist.",
       { timeout: 8000 },
     );
     await expect(page.locator("#inviteToken")).toHaveCount(0);
@@ -352,23 +381,24 @@ test("first launch verifies an account without invitations or settings and waits
     );
     await expect(page.locator("#setupPanel")).not.toBeVisible();
     await page.getByRole("button", { name: "Fahrt beenden" }).click();
-    await expect(page.locator("#setupTitle")).toHaveText("Bereit, Flo?", {
-      timeout: 8000,
+    await expect(page.locator("#setupTitle")).toHaveText("Bereit, wenn du es bist.", {
+      timeout: 12000,
     });
     await page.locator("#settingsNav").click();
     await expect(page.locator("#serverURL")).not.toBeVisible();
-    await expect(page.locator("#displayName")).toHaveValue("");
+    await expect(page.locator("#sauceURL")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.screenshot({
       path: "test-results/zwoice-ready.png",
       fullPage: true,
     });
   } finally {
+    await page.evaluate(async (config) => { await fetch("/api/account/zwift/unlink", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({server:config.server})}); }, config);
     await request.post("http://127.0.0.1:11080/move?id=1001&riding=true");
   }
 });
 
-test("missing Sauce gives an actionable prompt and upgrades discard old invitations", async ({
+test("central setup needs no local Sauce and upgrades discard old invitations", async ({
   page,
 }) => {
   await page.addInitScript(() =>
@@ -382,13 +412,9 @@ test("missing Sauce gives an actionable prompt and upgrades discard old invitati
     ),
   );
   await page.goto("http://127.0.0.1:18787");
-  await expect(page.locator("#sauceActions")).toBeVisible({ timeout: 8000 });
-  await expect(
-    page.getByRole("link", { name: "Sauce herunterladen ↗" }),
-  ).toHaveAttribute(
-    "href",
-    "https://www.sauce.llc/products/sauce4zwift/download",
-  );
+  await expect(page.locator("#sauceURL")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sauce herunterladen ↗" })).toHaveCount(0);
+  await expect(page.locator("#setupTitle")).toHaveText("Einmal anmelden. Dann einfach losfahren.");
   expect(
     await page.evaluate(() => localStorage.getItem("zwoice.settings")),
   ).not.toContain("old-secret");

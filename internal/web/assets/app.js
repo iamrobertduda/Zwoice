@@ -3,8 +3,6 @@ import { Accounts } from "./accounts.js";
 
 const $ = (id) => document.getElementById(id);
 const defaults = {
-  name: "",
-  sauce: "http://127.0.0.1:1080",
   server: "",
   inputDevice: "",
   outputDevice: "",
@@ -29,10 +27,6 @@ if (stored.token || stored.remember) {
 const configuration = fetch("/config.json")
   .then((r) => r.json())
   .then((config) => {
-    if (typeof config.sauce === "string" && !stored.sauce) {
-      defaults.sauce = config.sauce;
-      settings.sauce = config.sauce;
-    }
     if (typeof config.server === "string") {
       defaults.server = config.server;
       if (!settings.server) settings.server = config.server;
@@ -43,7 +37,7 @@ let socket,
   wanted = false,
   demo = false,
   ready = false,
-  sauceConnected = false,
+  positionConnected = false,
   retryTimer,
   attempt = 0,
   lastMessage = 0,
@@ -77,6 +71,7 @@ const accounts = new Accounts(
         ? "＋ Fahrt starten"
         : "Anmelden & losfahren";
     renderSetup(setupState);
+    queueMicrotask(checkSetup);
   },
   () => stop(false),
   notice,
@@ -128,8 +123,6 @@ function connection(kind, active, text) {
 }
 
 function showSettings() {
-  $("displayName").value = settings.name;
-  $("sauceURL").value = settings.sauce;
   $("serverURL").value = settings.server;
   $("noiseSuppression").checked = settings.noiseSuppression;
   $("pushToTalk").checked = settings.pushToTalk;
@@ -172,8 +165,6 @@ $("settingsForm").addEventListener("submit", (event) => {
   if (wasActive) stop(false);
   settings = {
     ...settings,
-    name: $("displayName").value.trim(),
-    sauce: $("sauceURL").value.trim(),
     server: $("serverURL").value.trim() || defaults.server,
     inputDevice: $("inputDevice").value,
     outputDevice: $("outputDevice").value,
@@ -230,7 +221,7 @@ document
 $("connectButton").onclick = () => (wanted ? stop() : start());
 async function start() {
   await loginReady;
-  if (!accounts.ensure()) return;
+  if (!accounts.ensure() || !accounts.ensureLinked()) return;
   if (
     !navigator.mediaDevices?.getUserMedia ||
     !window.RTCPeerConnection ||
@@ -277,7 +268,7 @@ async function start() {
 function connect() {
   if (!wanted) return;
   ready = false;
-  sauceConnected = false;
+  positionConnected = false;
   voice.setAllowed(false);
   lastMessage = Date.now();
   const ws = new WebSocket(`ws://${location.host}/api/session`);
@@ -291,8 +282,6 @@ function connect() {
       ws.send(
         JSON.stringify({
           server: settings.server,
-          sauce: settings.sauce,
-          name: settings.name,
         }),
       );
   };
@@ -317,20 +306,20 @@ function connect() {
         send({ type: "voice", active: true });
         connection("server", true, "Verbunden · Sprache verschlüsselt");
         $("connectButton").textContent = "Fahrt beenden";
-        notice("Warte auf deine eigene Position aus Sauce …");
-        badge("Warte auf Sauce");
-      } else if (m.type === "sauce") {
-        const changed = sauceConnected !== m.connected;
-        sauceConnected = m.connected;
-        voice.setAllowed(sauceConnected);
+        notice("Warte auf deine Fahrt in Zwift …");
+        badge("Warte auf deine Fahrt");
+      } else if (m.type === "positionSource") {
+        const changed = positionConnected !== m.connected;
+        positionConnected = m.connected;
+        voice.setAllowed(positionConnected);
         connection(
-          "sauce",
-          sauceConnected,
-          sauceConnected ? `Fahrer ${m.athleteId} · Live-Daten` : m.message,
+          "position",
+          positionConnected,
+          positionConnected ? `${m.name || "Dein Fahrer"} · Live-Daten` : "Warte auf frische Fahrtdaten",
         );
-        $("liveDot").classList.toggle("active", sauceConnected);
-        $("setupPanel").hidden = sauceConnected;
-        if (sauceConnected) {
+        $("liveDot").classList.toggle("active", positionConnected);
+        $("setupPanel").hidden = positionConnected;
+        if (positionConnected) {
           $("worldLabel").textContent =
             worlds[m.course] || `Zwift-Welt ${m.course}`;
           badge("Du bist in Hörweite", true);
@@ -340,12 +329,12 @@ function connect() {
           renderSetup("waiting");
           badge("Sprache pausiert");
           renderPeers([]);
-          notice(m.message);
+          notice(m.message || "Starte deine Fahrt in Zwift. Ohne frische Positionsdaten bleibt Sprache pausiert.");
           $("selfLabel").textContent = "Pausiert";
         }
         renderControls();
       } else if (m.type === "peers") {
-        if (sauceConnected) {
+        if (positionConnected) {
           peers = m.peers;
           voice.sync(peers);
           renderPeers(peers);
@@ -359,6 +348,7 @@ function connect() {
         reconnectReason = m.message;
         notice(m.message, true);
         if (m.fatal !== false) stop(false);
+        if (m.linkRequired) { accounts.refresh().then(() => accounts.showRider()); }
         if (m.loginRequired) {
           accounts.set(null);
           accounts.show();
@@ -375,12 +365,12 @@ function connect() {
   ws.onclose = () => {
     if (socket !== ws) return;
     ready = false;
-    sauceConnected = false;
+    positionConnected = false;
     voice.setAllowed(false);
     renderPeers([]);
     renderControls();
     connection("server", false, "Verbindung unterbrochen");
-    connection("sauce", false, "Sprache sicher pausiert");
+    connection("position", false, "Sprache sicher pausiert");
     $("liveDot").classList.remove("active");
     if (wanted) {
       badge("Verbindung wird wiederhergestellt");
@@ -405,7 +395,7 @@ function connect() {
 function stop(clearNotice = true) {
   wanted = false;
   ready = false;
-  sauceConnected = false;
+  positionConnected = false;
   ++requestGeneration;
   clearTimeout(retryTimer);
   const old = socket;
@@ -425,7 +415,7 @@ function stop(clearNotice = true) {
   $("worldLabel").textContent = "Warte auf deine Fahrt";
   $("selfLabel").textContent = "Startklar";
   $("latency").textContent = "—";
-  connection("sauce", false, "Wartet auf Verbindung");
+  connection("position", false, "Wartet auf Verbindung");
   connection("server", false, "Noch nicht verbunden");
   badge("Bereit, wenn du es bist");
   if (clearNotice) notice("");
@@ -450,7 +440,7 @@ function renderControls() {
       : "Mikrofon bereit · Demo"
     : !voice.stream
       ? "Mikrofon inaktiv"
-      : !sauceConnected
+      : !positionConnected
         ? "Mikrofon pausiert"
         : voice.muted
           ? "Mikrofon stumm"
@@ -469,7 +459,7 @@ function renderControls() {
   $("audioBadge").textContent = demo
     ? "Vorschau"
     : voice.stream
-      ? sauceConnected
+      ? positionConnected
         ? "Bereit"
         : "Pausiert"
       : "Inaktiv";
@@ -670,7 +660,7 @@ $("demoButton").onclick = () => {
   $("worldLabel").textContent = "Watopia · Demo";
   $("selfLabel").textContent = "Du · Demo";
   $("liveDot").classList.add("active");
-  connection("sauce", false, "Demo · keine Verbindung");
+  connection("position", false, "Demo · keine Verbindung");
   connection("server", false, "Demo · keine Sprachübertragung");
   notice(
     "Du siehst eine simulierte Fahrt. Verändere den Abstand zur Gruppe, um das Ausblenden zu erleben.",
@@ -699,85 +689,55 @@ renderControls();
 
 function renderSetup(state, name = "") {
   setupState = state;
-  if (demo || sauceConnected) return;
+  if (demo || positionConnected) return;
   $("setupPanel").hidden = false;
   const content = {
-    checking: [
-      "Wir schauen, ob deine Fahrt bereit ist.",
-      "Einmal anmelden. Deine Fahrt erkennt Zwoice danach automatisch über Sauce.",
-    ],
-    missing: [
-      "Öffne Zwift und Sauce. Wir warten hier.",
-      "Zwoice braucht Sauce for Zwift, um deine Nähe zu anderen Fahrern zu erkennen. Sobald beide laufen, geht es automatisch weiter.",
-    ],
-    waiting: [
-      "Sauce ist da. Jetzt noch losfahren.",
-      "Starte deine eigene Fahrt in Zwift. Wir erkennen dich automatisch, sobald du auf der Strecke bist.",
-    ],
-    ready: [
-      name ? `Bereit, ${name.split(" ")[0]}?` : "Deine Fahrt ist bereit.",
-      "Klicke auf „Fahrt starten“ und erlaube dein Mikrofon. Alles andere ist schon eingestellt.",
-    ],
-    connecting: [
-      "Deine Fahrt ist erkannt.",
-      "Wir verbinden deinen Sprachchat. Gleich bist du in Hörweite.",
-    ],
+    checking: ["Wir verbinden deine Fahrt.", "Deine Fahrer-Verbindung läuft über Zwoice."],
+    unlinked: ["Welcher Fahrer bist du?", "Verknüpfe einmalig deinen Zwift-Fahrer. Danach genügt ein Klick auf Fahrt starten."],
+    waiting: ["Bereit, wenn du es bist.", "Klicke auf Fahrt starten und fahre in Zwift los. Wir verbinden dich automatisch."],
+    ready: [name ? `Bereit, ${name.split(" ")[0]}?` : "Deine Fahrt ist bereit.", "Starte den Sprachchat und komm in Hörweite."],
+    connecting: ["Deine Fahrt wird verbunden.", "Wir stellen deine Fahrer-Verbindung her."],
+    unavailable: ["Die Fahrer-Verbindung ist gerade nicht verfügbar.", "Wir versuchen es automatisch erneut. Du musst nichts einrichten."],
   }[state] || ["Wir verbinden deine Fahrt.", "Das geht automatisch weiter."];
-  if (!wanted)
-    connection(
-      "sauce",
-      ["waiting", "ready"].includes(state),
-      state === "ready"
-        ? "Deine Fahrt wurde erkannt"
-        : state === "waiting"
-          ? "Verbunden · Warte auf deine Fahrt"
-          : "Warte auf Sauce",
-    );
+  if (!wanted) connection("position", state === "ready", state === "ready" ? "Deine Fahrt wurde erkannt" : "Warte auf deine Fahrt");
   if (!accounts.current) {
     content[0] = "Einmal anmelden. Dann einfach losfahren.";
-    content[1] =
-      "E-Mail eingeben, Code bestätigen – fertig. Auf deinem Gerät kannst du angemeldet bleiben. Keine Einladung nötig.";
+    content[1] = "E-Mail eingeben, Code bestätigen und deinen Zwift-Fahrer verknüpfen. Keine Einladung nötig.";
+  } else if (!accounts.current.zwift) {
+    content[0] = "Welcher Fahrer bist du?";
+    content[1] = "Verknüpfe einmalig deinen Zwift-Fahrer. Eine zusätzliche Installation brauchst du nicht.";
   }
   $("setupTitle").textContent = content[0];
   $("setupDescription").textContent = content[1];
   $("setupSymbol").textContent = state === "ready" ? "✓" : "↗";
-  $("setupSauce").classList.toggle(
-    "done",
-    ["waiting", "ready", "connecting"].includes(state),
-  );
-  $("setupRide").classList.toggle(
-    "done",
-    ["ready", "connecting"].includes(state),
-  );
+  $("setupLink").classList.toggle("done", Boolean(accounts.current?.zwift));
+  $("setupRide").classList.toggle("done", state === "ready");
   $("setupMic").classList.toggle("done", Boolean(voice.stream));
-  $("sauceActions").hidden = state !== "missing";
+  $("linkActions").hidden = !accounts.current || Boolean(accounts.current.zwift);
+
 }
 let setupBusy = false;
 async function checkSetup() {
-  if (setupBusy || demo || ready || document.hidden) return;
+  if (setupBusy || demo || ready || document.hidden || !accounts.current) return;
   setupBusy = true;
   const generation = requestGeneration;
   try {
     const response = await fetch("/api/setup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sauce: settings.sauce }),
+      body: JSON.stringify({ server: settings.server }),
       signal: AbortSignal.timeout(3500),
     });
     if (!response.ok) return;
     const result = await response.json();
     if (generation === requestGeneration && !ready)
-      renderSetup(result.state, result.name);
+      renderSetup(result.state, result.zwift?.name);
   } catch {
     /* Session connection reports an unavailable companion. */
   } finally {
     setupBusy = false;
   }
 }
-$("connectionSettingsButton").onclick = () => {
-  showSettings();
-  $("advancedSettings").open = true;
-  $("sauceURL").focus();
-};
+$("linkRiderButton").onclick = () => accounts.showRider();
 checkSetup();
-setInterval(checkSetup, 3000);
+setInterval(checkSetup, 10000);

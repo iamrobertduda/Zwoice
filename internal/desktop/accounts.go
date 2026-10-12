@@ -75,6 +75,10 @@ func accountCall(ctx context.Context, server, path, token string, body []byte) (
 }
 func accountProxy(w http.ResponseWriter, r *http.Request) {
 	routes := map[string]string{"request": "/v1/auth/request", "verify": "/v1/auth/verify", "me": "/v1/auth/me", "logout": "/v1/auth/logout", "admin/accounts": "/v1/admin/accounts", "admin/access": "/v1/admin/access", "admin/policy": "/v1/admin/policy"}
+	for _, action := range []string{"search", "begin", "confirm", "unlink", "status"} {
+		routes["zwift/"+action] = "/v1/zwift/" + action
+	}
+	routes["admin/observers"] = "/v1/admin/observers"
 	action := strings.TrimPrefix(r.URL.Path, "/api/account/")
 	path, ok := routes[action]
 	if !ok {

@@ -13,3 +13,5 @@
 .DS_Store
 
 /data/
+/deploy/observer/observer.json
+/observer-report*.json

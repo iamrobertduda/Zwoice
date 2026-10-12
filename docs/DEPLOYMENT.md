@@ -1,5 +1,7 @@
 # Betrieb auf Railway
 
+**Zentraler Entwicklungsstand:** Vor dem Deployment zusätzlich [OBSERVERS.md](OBSERVERS.md) beachten. Dieser Stand benötigt `ZWOICE_OBSERVER_TOKEN`, einen erreichbaren privaten Worker und bestätigte Fahrer-Verknüpfungen. Ohne Worker bleiben neue Sprachsitzungen geschlossen. Nicht über den bestehenden Dienst ausrollen, bevor reale Kapazität, Nutzungsgrundlage und passende Desktop-Pakete vorliegen.
+
 ## Aufteilung
 
 Railway betreibt den Go-Signalisierungsdienst über HTTPS/WebSocket. Audio geht direkt zwischen den Teilnehmern oder über Cloudflare Realtime TURN. Railway braucht keine Audio-UDP-Ports und keinen separaten Datenbank- oder Redis-Dienst. Verifizierte Konten, Sitzungen und Zugangsregeln liegen in einer kleinen bbolt-Datei auf einem persistenten Volume (`/data`).
@@ -52,7 +54,7 @@ Cloudflare-Konfiguration hat Vorrang vor coturn. STUN kann mit `ZWOICE_STUN_URLS
 
 ## Selbstregistrierung mit kontrolliertem Zugang
 
-Die Desktop-App fragt nach E-Mail und Einmalcode. Erst nach erfolgreicher Anmeldung öffnet sie die Sprachverbindung anhand der frischen Sauce-`/self`-Position. **Keine persönlichen Einladungen ausstellen.** Alte Clients ohne Login und alte Einladungstokens erhalten HTTP 401; Nutzer müssen v1.2.0 oder neuer installieren.
+Die Desktop-App fragt nach E-Mail und Einmalcode. Im zentralen Stand wird nach erfolgreicher Anmeldung der eigene Fahrer einmal bestätigt. Neue Sprachsitzungen benötigen einen freien Beobachterplatz; hörbar werden Teilnehmer erst mit frischen zentralen Daten. **Keine persönlichen Einladungen ausstellen.** Alte Clients ohne Login und alte Einladungstokens erhalten HTTP 401; Nutzer müssen v1.2.0 oder neuer installieren.
 
 In Railway hinterlegen:
 

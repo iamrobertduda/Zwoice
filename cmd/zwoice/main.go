@@ -22,6 +22,7 @@ import (
 	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/broker"
 	"github.com/iamrobertduda/Zwoice/internal/desktop"
+	"github.com/iamrobertduda/Zwoice/internal/observer"
 )
 
 var version = "dev"
@@ -54,6 +55,12 @@ func run() error {
 	var handler http.Handler
 	var address string
 	switch mode {
+	case "observer":
+		cfg, err := observer.LoadWorkerConfig(os.Getenv("ZWOICE_OBSERVER_CONFIG"))
+		if err != nil {
+			return err
+		}
+		return observer.RunWorker(ctx, cfg)
 	case "server":
 		dataDir := os.Getenv("ZWOICE_DATA_DIR")
 		if dataDir == "" {
@@ -86,6 +93,21 @@ func run() error {
 		defer store.Close()
 		cfg := broker.Config{Accounts: store, STUNURLs: splitEnv("ZWOICE_STUN_URLS"), TURNURLs: splitEnv("ZWOICE_TURN_URLS"), TURNSecret: os.Getenv("ZWOICE_TURN_SECRET"), CloudflareKeyID: os.Getenv("ZWOICE_CF_TURN_KEY_ID"), CloudflareAPIToken: os.Getenv("ZWOICE_CF_TURN_API_TOKEN")}
 		cfg.TrustRailwayProxy = os.Getenv("RAILWAY_PROJECT_ID") != ""
+		if token := os.Getenv("ZWOICE_OBSERVER_TOKEN"); token != "" {
+			if len(token) < 32 {
+				return fmt.Errorf("ZWOICE_OBSERVER_TOKEN must contain at least 32 characters")
+			}
+			capacity := 20
+			if value := os.Getenv("ZWOICE_OBSERVER_CAPACITY"); value != "" {
+				capacity, err = strconv.Atoi(value)
+				if err != nil || capacity < 1 || capacity > 1000 {
+					return fmt.Errorf("invalid ZWOICE_OBSERVER_CAPACITY")
+				}
+			}
+			cfg.Observer = observer.New(token, capacity)
+		} else {
+			log.Print("Central observers are not configured; rider linking and voice sessions remain closed")
+		}
 		if len(cfg.STUNURLs) == 0 {
 			cfg.STUNURLs = []string{"stun:stun.cloudflare.com:3478"}
 		}
@@ -110,7 +132,7 @@ func run() error {
 		address = fmt.Sprintf("127.0.0.1:%d", *port)
 		handler = desktop.Handler(address, cancel)
 	default:
-		return fmt.Errorf("usage: zwoice [desktop|server|version] [flags]")
+		return fmt.Errorf("usage: zwoice [desktop|server|observer|version] [flags]")
 	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

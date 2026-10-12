@@ -45,16 +45,17 @@ type Store struct {
 	cfg Config
 }
 type Account struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	Created     int64  `json:"created"`
-	LastLogin   int64  `json:"lastLogin"`
-	Disabled    bool   `json:"disabled"`
-	TURNAllowed bool   `json:"turnAllowed"`
-	TURNLimit   int    `json:"turnLimit"`
-	TURNDaily   int    `json:"turnDaily"`
-	TURNDay     string `json:"turnDay"`
-	Admin       bool   `json:"admin"`
+	ID          string     `json:"id"`
+	Email       string     `json:"email"`
+	Created     int64      `json:"created"`
+	LastLogin   int64      `json:"lastLogin"`
+	Disabled    bool       `json:"disabled"`
+	TURNAllowed bool       `json:"turnAllowed"`
+	TURNLimit   int        `json:"turnLimit"`
+	TURNDaily   int        `json:"turnDaily"`
+	TURNDay     string     `json:"turnDay"`
+	Admin       bool       `json:"admin"`
+	Zwift       *ZwiftLink `json:"zwift,omitempty"`
 }
 type Session struct {
 	AccountID        string `json:"accountId"`
@@ -80,7 +81,7 @@ type Grant struct {
 	NextAttempt                                    int64
 }
 
-var bucketNames = []string{"accounts", "emails", "sessions", "userSessions", "challenges", "mailRates", "meta", "grants"}
+var bucketNames = []string{"accounts", "emails", "sessions", "userSessions", "challenges", "mailRates", "meta", "grants", "zwiftOwners", "zwiftChallenges"}
 
 func Open(cfg Config) (*Store, error) {
 	if cfg.Now == nil {
@@ -571,7 +572,7 @@ func (s *Store) SetPolicy(token string, p Policy) error {
 func (s *Store) Sweep() error {
 	now := s.cfg.Now().Unix()
 	return s.db.Update(func(tx *bolt.Tx) error {
-		for _, name := range []string{"challenges", "grants", "sessions"} {
+		for _, name := range []string{"challenges", "grants", "sessions", "zwiftChallenges"} {
 			bucket := b(tx, name)
 			c := bucket.Cursor()
 			var expired []string

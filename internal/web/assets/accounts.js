@@ -28,13 +28,64 @@ export class Accounts {
         });
         this.set(response.account);
         $("accountDialog").close();
-        this.notice("Du bist angemeldet. Jetzt kannst du deine Fahrt starten.");
+        if (!response.account.zwift) this.showRider();
+        else this.notice("Du bist angemeldet. Jetzt kannst du deine Fahrt starten.");
       });
     $("changeEmail").onclick = () => {
       this.challenge = "";
       this.show();
     };
     $("logoutButton").onclick = () => this.logout();
+    $("manageRiderButton").onclick = () => { $("accountDialog").close(); this.showRider(); };
+    $("zwiftSearchForm").onsubmit = (event) => this.submit(event, async () => {
+      const { profiles } = await this.call("zwift/search", { query: $("zwiftQuery").value.trim() });
+      $("zwiftResults").replaceChildren();
+      if (!profiles?.length) { this.message("zwiftMessage", "Keinen Fahrer gefunden. Prüfe deinen Namen auf Zwift und versuche es erneut."); return; }
+      for (const profile of profiles) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "rider-result secondary-button";
+        const name = document.createElement("strong"); name.textContent = profile.name;
+        const detail = document.createElement("small"); detail.textContent = `Zwift-ID ${profile.id} · Das bin ich →`;
+        button.append(name, detail);
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            const result = await this.call("zwift/begin", { athleteId: profile.id });
+            $("zwiftChosenName").textContent = result.profile.name;
+            $("zwiftProofCode").textContent = result.challenge.code;
+            $("zwiftExpiry").textContent = `Gültig bis ${new Date(result.challenge.expires * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}.`;
+            $("zwiftSearchForm").hidden = true;
+            $("zwiftProofForm").hidden = false;
+            this.message("zwiftMessage", "");
+          } catch (error) { this.message("zwiftMessage", error.message, true); }
+          finally { button.disabled = false; }
+        };
+        $("zwiftResults").append(button);
+      }
+    }, "zwiftMessage");
+    $("zwiftProofForm").onsubmit = (event) => this.submit(event, async () => {
+      const result = await this.call("zwift/confirm");
+      this.stop();
+      this.set(result.account);
+      this.showRider();
+    }, "zwiftMessage");
+    $("chooseOtherRider").onclick = () => { $("zwiftProofForm").hidden = true; $("zwiftSearchForm").hidden = false; this.message("zwiftMessage", ""); };
+    $("copyZwiftCode").onclick = async () => {
+      try { await navigator.clipboard.writeText($("zwiftProofCode").textContent); this.message("zwiftMessage", "Code kopiert. Füge ihn in deinem Zwift-Profil ein."); }
+      catch { this.message("zwiftMessage", "Markiere den Code und kopiere ihn manuell."); }
+    };
+    $("unlinkRider").onclick = async () => {
+      $("unlinkRider").disabled = true;
+      try {
+        this.stop();
+        await this.call("zwift/unlink");
+        await this.refresh();
+        $("zwiftProofCode").textContent = "";
+        this.showRider();
+      } catch (error) { this.message("zwiftMessage", error.message, true); }
+      finally { $("unlinkRider").disabled = false; }
+    };
     $("adminButton").onclick = async () => {
       $("accountDialog").close();
       $("adminDialog").showModal();
@@ -94,6 +145,8 @@ export class Accounts {
       ? "Dein Konto"
       : "Anmelden. Und losfahren.";
     $("accountEmail").textContent = this.current?.email || "";
+    $("linkedRiderName").textContent = this.current?.zwift ? `Verbunden mit ${this.current.zwift.name}` : "Dein Zwift-Fahrer ist noch nicht verknüpft.";
+    $("manageRiderButton").textContent = this.current?.zwift ? "Fahrer-Verknüpfung verwalten" : "Zwift-Fahrer verknüpfen";
     $("accountAccess").textContent = this.current?.turnAllowed
       ? "Sprachchat freigegeben"
       : "Sprachchat vom Betreiber gesperrt";
@@ -105,6 +158,22 @@ export class Accounts {
     if (this.current) return true;
     this.show();
     return false;
+  }
+  ensureLinked() {
+    if (this.current?.zwift) return true;
+    this.showRider();
+    return false;
+  }
+  showRider() {
+    if (!this.current) { this.show(); return; }
+    const linked = Boolean(this.current.zwift);
+    $("zwiftSearchForm").hidden = linked;
+    $("zwiftProofForm").hidden = true;
+    $("zwiftLinked").hidden = !linked;
+    $("zwiftLinkedName").textContent = linked ? `✓ ${this.current.zwift.name} ist mit deinem Konto verbunden.` : "";
+    this.message("zwiftMessage", "");
+    if (!$("zwiftDialog").open) $("zwiftDialog").showModal();
+    if (!linked) $("zwiftQuery").focus();
   }
   async logout() {
     this.stop();
@@ -119,6 +188,9 @@ export class Accounts {
       );
     } finally {
       this.challenge = "";
+      $("zwiftDialog").close();
+      $("zwiftResults").replaceChildren();
+      $("zwiftProofCode").textContent = "";
       this.set(null);
       $("logoutButton").disabled = false;
       $("accountDialog").close();
@@ -155,6 +227,14 @@ export class Accounts {
       $("adminMore").hidden = !this.next;
       $("registrationOpen").checked = result.policy.registrationOpen;
       $("turnEnabled").checked = result.policy.turnEnabled;
+      const observers = await this.call("admin/observers");
+      $("observerStatus").textContent = observers.connected
+        ? `Fahrer-Verbindung online · ${observers.active}/${observers.capacity} Plätze belegt · ${observers.fresh} mit frischen Daten`
+        : "Fahrer-Verbindung offline. Neue Fahrten sind momentan nicht möglich.";
+      if (observers.runtime) {
+        const health = observers.runtime;
+        $("observerStatus").textContent += ` · ${health.responding}/${health.processes} Beobachter erreichbar · ${(health.rssBytes / 1048576).toFixed(0)} MiB RAM (erreichbare Beobachter)`;
+      }
       this.message("adminMessage", "");
     } catch (error) {
       this.message("adminMessage", error.message, true);

@@ -1700,3 +1700,9 @@ legend {
     scroll-behavior: auto !important;
   }
 }
+/* Rider linking follows the existing dialog and button system. */
+.rider-results { display: grid; gap: 10px; margin-top: 16px; }
+.rider-result { display: grid; gap: 4px; text-align: left; width: 100%; }
+.rider-result small { opacity: .7; font-weight: 400; }
+.link-code { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+.link-code code { font-size: 1.4rem; letter-spacing: .08em; user-select: all; }
