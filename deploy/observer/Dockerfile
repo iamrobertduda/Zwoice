@@ -20,7 +20,8 @@ WORKDIR /opt
 RUN curl -fL --retry 3 https://github.com/SauceLLC/sauce4zwift-releases/releases/download/v2.3.4/sauce4zwift-2.3.4.AppImage -o sauce.AppImage \
     && echo 'f811e7418268247fd44bc7f34acb9d9b5e40765043d70315d74e6edc2d64021b  sauce.AppImage' | sha256sum -c - \
     && chmod 755 sauce.AppImage && ./sauce.AppImage --appimage-extract >/dev/null \
-    && mv squashfs-root sauce && rm sauce.AppImage
+    && mv squashfs-root sauce && rm sauce.AppImage \
+    && chmod -R a+rX /opt/sauce
 COPY --from=build /zwoice /usr/local/bin/zwoice
 COPY deploy/observer/init.mjs /opt/zwoice/init.mjs
 RUN mkdir -p /data && chown 1000:1000 /data

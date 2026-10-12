@@ -54,7 +54,7 @@ export class Accounts {
             const result = await this.call("zwift/begin", { athleteId: profile.id });
             $("zwiftChosenName").textContent = result.profile.name;
             $("zwiftProofCode").textContent = result.challenge.code;
-            $("zwiftExpiry").textContent = `Gültig bis ${new Date(result.challenge.expires * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
+            $("zwiftExpiry").textContent = `Gültig bis ${new Date(result.challenge.expires * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}.`;
             $("zwiftSearchForm").hidden = true;
             $("zwiftProofForm").hidden = false;
             this.message("zwiftMessage", "");

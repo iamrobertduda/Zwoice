@@ -36,6 +36,13 @@ async function login(
   const proof = await page.locator("#zwiftProofCode").textContent();
   await request.post(`http://127.0.0.1:11080/profile?id=${riderID}&code=${encodeURIComponent(proof)}`);
   await page.screenshot({ path: `test-results/zwoice-link-${riderID}.png` });
+  if (riderID === 1001) {
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.locator("#zwiftDialog").evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
+    await page.screenshot({ path: "test-results/zwoice-link-mobile.png" });
+    await page.setViewportSize(viewport);
+  }
   await page.getByRole("button", { name: "Code ist eingetragen →" }).click();
   await expect(page.locator("#zwiftLinked")).toBeVisible();
   await page.getByRole("button", { name: "Fertig", exact: true }).click();
