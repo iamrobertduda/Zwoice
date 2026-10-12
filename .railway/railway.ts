@@ -34,6 +34,8 @@ export default defineRailway(() => {
       ZWOICE_EMAIL_DAILY_LIMIT: preserve(),
       ZWOICE_CF_TURN_KEY_ID: preserve(),
       ZWOICE_CF_TURN_API_TOKEN: preserve(),
+      ZWOICE_OBSERVER_TOKEN: preserve(),
+      ZWOICE_OBSERVER_CAPACITY: preserve(),
     },
     volumeMounts: { "/data": accounts },
     build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },

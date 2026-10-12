@@ -3,18 +3,18 @@
 ## Daten- und Audiopfad
 
 ```text
-Zwift → Sauce → lokaler Go-Client → Railway-Signalisierung
-                      ↕                     ↕
-                lokale Browser-UI ← Peer-Liste und SDP/ICE
-                      ↕
-          verschlüsseltes WebRTC-Audio (Opus)
-                      ↕
-           andere Browser, direkt oder via TURN
+Zwift → privater Sauce-Pool → authentifizierter Worker → Railway
+                                                          ↕
+                      lokaler Go-Client ↔ Browseroberfläche
+                                               ↕
+                         WebRTC-Audio direkt oder über TURN
 ```
+
+Dieser Entwicklungsstand verwendet Protokoll 2 und ist noch nicht veröffentlicht. [Betriebs- und Freigabestand](OBSERVERS.md). Nutzerpositionen kommen nur vom zentralen Worker; Nutzer wählen nicht selbst die Athleten-ID einer Sitzung.
 
 ## Go + vorhandener Browser
 
-Ein kompiliertes Programm enthält Server, Sauce-Adapter und 75 kB unkomprimierte UI-Quelldateien. Der Laufzeit-Code benötigt nur eine externe Go-Bibliothek (`coder/websocket`). Keine React-/Electron-/Node-Runtime wird ausgeliefert. Die standardisierte WebRTC-Implementierung des Browsers übernimmt Codecs, Jitterbuffer, Echounterdrückung, NAT-Traversal und Audiogeräte.
+Ein kompiliertes Go-Programm enthält die Desktop-Oberfläche, Broker- und Worker-Modi. WebSockets verwenden `coder/websocket`, Konten `bbolt`. Keine React-/Electron-/Node-Runtime wird an Endnutzer ausgeliefert. Nur der Betreiber-Worker benötigt die separat installierte vollständige Sauce-Laufzeit und Node für die Konfiguration. Die standardisierte WebRTC-Implementierung des Browsers übernimmt Codecs, Jitterbuffer, Echounterdrückung, NAT-Traversal und Audiogeräte.
 
 Das spart eine separat gebündelte Browser-Engine. Der vorhandene Browser verbraucht trotzdem RAM/CPU; seine Kosten dürfen bei Messungen nicht unterschlagen werden. Eine vollständig native Audio-Engine würde zusätzliche plattformspezifische Audio-, Echo- und Gerätewechsel-Implementierungen erfordern. Diese Version liefert eine lokale Anwendung mit Browseroberfläche, keinen nativen Tray-Client.
 
@@ -33,7 +33,7 @@ Geometrische Nähe ist keine Distanz entlang des Straßennetzes. Benachbarte Str
 - Maximal sechs WebRTC-Verbindungen pro Fahrer.
 - WebSocket-Nachrichten begrenzt; 32 ausgehende Nachrichten pro Client gepuffert. Ein zu langsamer Client wird getrennt.
 - Begrenzte Nachrichtenrate und 16 gleichzeitig laufende TURN-Anmeldevorgänge.
-- Keine globale Übertragung aller Fahrer, keine Aufzeichnung und keine dauerhafte Datenbank.
+- Keine globale Übertragung aller Fahrer und keine Audio-/Positionsaufzeichnung durch Zwoice. Konten und Fahrer-Verknüpfungen liegen dauerhaft in bbolt; Sauce hat eigene lokale Caches.
 
 Dies ist eine bewusste Kapazitätsgrenze, keine Behauptung unbegrenzter Skalierung. Der 1.000-Fahrer-Benchmark prüft die Näheerkennung isoliert, nicht 1.000 reale Audioclients. Bevor die Betriebsgrenze erhöht wird, sind WebSocket-Lasttest, Egress-Messung und Profiler-Auswertung erforderlich.
 
@@ -51,9 +51,13 @@ Ein einzelner Offerer pro Teilnehmerpaar verhindert Offer-Kollisionen. ICE-Kandi
 
 Cloudflare-/coturn-Zugangsdaten sind sitzungsbezogen und zeitlich begrenzt. Browser erhalten keine permanenten TURN- oder Signierschlüssel. Sprache nutzt DTLS-SRTP; der Signalisierungsserver hat keine Audioschlüssel.
 
-## Start ohne Einrichtung
+## Einmalige Fahrer-Verknüpfung
 
-Beim Öffnen prüft der lokale Client alle drei Sekunden die voreingestellte Sauce-Adresse, solange keine Sprachsitzung läuft und der Tab sichtbar ist. Dabei werden weder Mikrofon noch TURN-Zugangsdaten angefordert. Der Nutzer meldet sich zunächst mit einem E-Mail-Code an. Nach „Fahrt starten“ erlaubt der Nutzer sein Mikrofon; der Companion wartet auf eine frische eigene Fahrerposition, liest ID und Name aus `state` und `athlete`, und öffnet nach Prüfung der Konto-Sitzung die Sprachverbindung. Ein Fahrerwechsel beendet die alte Sitzung und verbindet automatisch unter der neuen ID. Bei fehlender Quelle bleibt das Mikrofon für die Übertragung gesperrt. Der Vorbereitungs-Heartbeat verhindert unnötige Wiederverbindungen während des Wartens.
+Die App führt nach dem E-Mail-Code durch Fahrersuche und Bestätigung. Ein accountgebundener Zufallscode im Zwift-Profil beweist Zugriff auf diesen Fahrer. Die Bestätigung lädt das Profil frisch über einen Betreiber-Beobachter und verbraucht den 15 Minuten gültigen Code atomar. Pro Fahrer ist nur ein Zwoice-Konto erlaubt. Name und ID kommen anschließend aus dieser Zuordnung; Browsernachrichten können sie nicht überschreiben.
+
+Nach „Fahrt starten“ reserviert der Broker einen Beobachterplatz. Erst frische, an diese Lease gebundene Positionsdaten aktivieren den Sprachgraphen. Der Worker verfolgt numerische Fahrer-IDs, keine Kameraposition und kein ungebundenes `self`. Veraltete Spiel-Zeitstempel und abgelaufene Leases können keine Nähe erneuern. Nach drei Sekunden Datenalter (Sauce-Alter plus Transportzeit) entfernt der Broker die Position. Der Client schaltet bei fehlender Quelle zusätzlich stumm.
+
+Der Pool begrenzt seine Prozesse auf die konfigurierten Slots; der Broker standardmäßig auf 20. Ein separater Monitor-Login je gleichzeitigem Beobachter ist vorgesehen. Die tatsächliche Reichweite und Ressourcen pro Prozess sind erst mit realen Fahrern zu bestimmen. Ein Pool teilt einen Host; es gibt keine VM je Nutzer.
 
 ## Konten und Zugang
 

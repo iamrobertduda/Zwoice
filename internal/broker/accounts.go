@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/iamrobertduda/Zwoice/internal/accounts"
+	"github.com/iamrobertduda/Zwoice/internal/observer"
 )
 
 type authBudget struct {
@@ -48,6 +49,9 @@ func (h *Hub) allowAuth(r *http.Request) bool {
 	g.tokens = min(60, g.tokens+now.Sub(g.updated).Seconds()*2)
 	g.updated = now
 	cost := float64(1)
+	if r.URL.Path == "/v1/zwift/status" || r.URL.Path == "/v1/auth/me" {
+		cost = 0.1
+	}
 	if r.URL.Path == "/v1/auth/request" {
 		cost = 6
 	}
@@ -82,6 +86,10 @@ func accountError(w http.ResponseWriter, err error) {
 		w.Header().Set("Retry-After", "60")
 	case errors.Is(err, accounts.ErrMail):
 		status = 503
+	case errors.Is(err, observer.ErrUnavailable), errors.Is(err, observer.ErrCapacity):
+		status = 503
+	case errors.Is(err, accounts.ErrZwiftClaimed):
+		status = 409
 	}
 	jsonResult(w, status, map[string]any{"message": message})
 }
@@ -178,6 +186,21 @@ func (h *Hub) accountHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		jsonResult(w, 200, map[string]any{"accounts": list, "next": next, "policy": p})
+	case "/v1/admin/observers":
+		a, _, err := store.Authenticate(token)
+		if err != nil {
+			accountError(w, err)
+			return
+		}
+		if !a.Admin {
+			http.Error(w, "admin required", 403)
+			return
+		}
+		var status observer.Status
+		if h.cfg.Observer != nil {
+			status = h.cfg.Observer.Status()
+		}
+		jsonResult(w, 200, status)
 	case "/v1/admin/access":
 		var input struct {
 			AccountID   string `json:"accountId"`

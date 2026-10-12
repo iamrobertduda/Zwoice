@@ -3,34 +3,40 @@ package desktop
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/iamrobertduda/Zwoice/internal/sauce"
 )
 
-// Setup checks only the explicitly configured Sauce endpoint. No LAN scanning,
-// microphone access, account creation or relay credentials are needed here.
+// Setup reads central readiness after login. No local Sauce connection exists.
 func setup(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Sauce string `json:"sauce"`
+		Server string `json:"server"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&request) != nil {
 		http.Error(w, "invalid request", 400)
 		return
 	}
-	if request.Sauce == "" {
-		request.Sauce = "http://127.0.0.1:1080"
-	}
-	if _, err := sauce.ValidateURL(request.Sauce); err != nil {
-		http.Error(w, "invalid Sauce address", 400)
+	base, err := accountBase(request.Server)
+	if err != nil {
+		http.Error(w, "invalid server", 400)
 		return
 	}
-	state, name := "missing", ""
-	if athlete, err := sauce.ReadSelf(r.Context(), request.Sauce); err == nil {
-		state = "waiting"
-		if sample, err := sauce.Normalize(athlete); err == nil {
-			state, name = "ready", sample.Name
-		}
-	}
+	token := sessionToken(r, base)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"state": state, "name": name})
+	if token == "" {
+		json.NewEncoder(w).Encode(map[string]string{"state": "login"})
+		return
+	}
+	result, status, err := accountCall(r.Context(), base, "/v1/zwift/status", token, []byte(`{}`))
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"state": "unavailable"})
+		return
+	}
+	if status == 401 || status == 403 {
+		json.NewEncoder(w).Encode(map[string]string{"state": "login"})
+		return
+	}
+	if status != 200 {
+		json.NewEncoder(w).Encode(map[string]string{"state": "unavailable"})
+		return
+	}
+	json.NewEncoder(w).Encode(result)
 }

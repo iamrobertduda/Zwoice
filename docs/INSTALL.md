@@ -1,5 +1,7 @@
 # Mit Zwoice losfahren
 
+**Diese Anleitung gilt für die veröffentlichten Pakete mit lokalem Sauce.** Der noch unveröffentlichte zentrale Entwicklungsstand führt nach der Anmeldung durch eine einmalige Fahrer-Verknüpfung und benötigt kein Sauce beim Nutzer. Details und noch offene Freigaben: [OBSERVERS.md](OBSERVERS.md).
+
 [Zwoice herunterladen](https://zwoice-production.up.railway.app/), öffnen und **Anmelden & losfahren** anklicken. E-Mail eingeben und den achtstelligen Code aus dem Postfach bestätigen. Beim ersten Mal entsteht dein Konto automatisch. Anschließend **Fahrt starten** anklicken und das Mikrofon erlauben. Keine Einladung und keine manuelle Zwift-ID.
 
 Mit „Auf diesem Gerät angemeldet bleiben“ gilt die Anmeldung 30 Tage. Ohne diese Option endet sie spätestens nach zwölf Stunden. Unter **Dein Konto → Abmelden** kannst du sie jederzeit beenden. Sprache und TURN funktionieren ausschließlich mit gültiger Anmeldung.

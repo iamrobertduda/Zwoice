@@ -1,0 +1,18 @@
+{
+  "server": "https://zwoice-production.up.railway.app",
+  "token": "REPLACE_WITH_RANDOM_SHARED_SECRET_32_OR_MORE_CHARACTERS",
+  "executable": "/opt/sauce/sauce4zwift",
+  "arguments": ["/opt/sauce/resources/app.asar/src/headless.mjs"],
+  "electronNodeMode": true,
+  "dataPath": "/data",
+  "node": "/usr/local/bin/node",
+  "initScript": "/opt/zwoice/init.mjs",
+  "slots": [
+    {
+      "mainUsername": "operator@example.invalid",
+      "mainPassword": "REPLACE",
+      "monitorUsername": "observer-01@example.invalid",
+      "monitorPassword": "REPLACE"
+    }
+  ]
+}

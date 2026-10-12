@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,8 +47,17 @@ type Sample struct {
 }
 
 func Normalize(a Athlete) (Sample, error) {
+	if !a.Self {
+		return Sample{}, errors.New("Sauce liefert keine eigene Fahrerposition")
+	}
+	return NormalizeAthlete(a, a.ID)
+}
+
+// NormalizeAthlete is for the trusted central observer, whose subscription is
+// bound to an explicit rider ID rather than the camera or Sauce account.
+func NormalizeAthlete(a Athlete, expectedID int64) (Sample, error) {
 	s := a.State
-	if a.Version != 2 || !a.Self || a.ID <= 0 || a.Age == nil || *a.Age < 0 || *a.Age > 3000 || s == nil || s.X == nil || s.Y == nil || s.Z == nil || s.WorldTime <= 0 {
+	if a.Version != 2 || a.ID != expectedID || a.ID <= 0 || a.ID > 9007199254740991 || a.Age == nil || *a.Age < 0 || *a.Age > 3000 || s == nil || s.X == nil || s.Y == nil || s.Z == nil || s.WorldTime <= 0 {
 		return Sample{}, errors.New("Sauce liefert noch keine aktuelle eigene Fahrerposition")
 	}
 	// Sauce's PlayerState has no realm field; its live Zwift client uses realm 1.
@@ -76,10 +86,22 @@ func ValidateURL(raw string) (*url.URL, error) {
 // Run reconnects until cancelled. Only a new worldTime refreshes a sample, so
 // replayed/cached Sauce data cannot keep a stopped rider audible indefinitely.
 func Run(ctx context.Context, base string, sample func(Sample), status func(string)) {
+	run(ctx, base, "self", func(a Athlete) {
+		if s, err := Normalize(a); err == nil {
+			sample(s)
+		}
+	}, status)
+}
+
+func Watch(ctx context.Context, base string, id int64, sample func(Athlete), status func(string)) {
+	run(ctx, base, strconv.FormatInt(id, 10), sample, status)
+}
+
+func run(ctx context.Context, base, ident string, sample func(Athlete), status func(string)) {
 	delay := 500 * time.Millisecond
 	for ctx.Err() == nil {
 		started := time.Now()
-		err := stream(ctx, base, sample)
+		err := stream(ctx, base, ident, sample)
 		if ctx.Err() != nil {
 			return
 		}
@@ -100,7 +122,7 @@ func Run(ctx context.Context, base string, sample func(Sample), status func(stri
 	}
 }
 
-func stream(ctx context.Context, base string, sample func(Sample)) error {
+func stream(ctx context.Context, base, ident string, sample func(Athlete)) error {
 	u, err := ValidateURL(base)
 	if err != nil {
 		return err
@@ -119,7 +141,7 @@ func stream(ctx context.Context, base string, sample func(Sample)) error {
 	}
 	defer conn.CloseNow()
 	conn.SetReadLimit(256 * 1024)
-	request := map[string]any{"type": "request", "uid": 1, "data": map[string]any{"method": "subscribe", "arg": map[string]any{"event": "athlete/self/v2", "subId": 2, "source": "stats", "options": map[string]any{"resources": []string{"state", "athlete"}, "stats": false}}}}
+	request := map[string]any{"type": "request", "uid": 1, "data": map[string]any{"method": "subscribe", "arg": map[string]any{"event": "athlete/" + ident + "/v2", "subId": 2, "source": "stats", "options": map[string]any{"resources": []string{"state", "athlete"}, "stats": false}}}}
 	writeCtx, stop := context.WithTimeout(ctx, 3*time.Second)
 	err = wsjson.Write(writeCtx, conn, request)
 	stop()
@@ -128,13 +150,19 @@ func stream(ctx context.Context, base string, sample func(Sample)) error {
 	}
 	last := int64(0)
 	accept := func(a Athlete) {
-		if s, e := Normalize(a); e == nil && s.WorldTime > last {
+		expected := a.ID
+		if ident != "self" {
+			expected, _ = strconv.ParseInt(ident, 10, 64)
+		} else if !a.Self {
+			return
+		}
+		if s, e := NormalizeAthlete(a, expected); e == nil && s.WorldTime > last {
 			last = s.WorldTime
-			sample(s)
+			sample(a)
 		}
 	}
 	// Seed a newly opened session without waiting for the next game packet.
-	if a, e := ReadSelf(ctx, base); e == nil {
+	if a, e := readAthlete(ctx, base, ident); e == nil {
 		accept(a)
 	}
 	for {
@@ -164,12 +192,16 @@ func stream(ctx context.Context, base string, sample func(Sample)) error {
 
 // ReadSelf is a bounded readiness check; it does not open a voice session.
 func ReadSelf(ctx context.Context, base string) (Athlete, error) {
+	return readAthlete(ctx, base, "self")
+}
+
+func readAthlete(ctx context.Context, base, ident string) (Athlete, error) {
 	var a Athlete
 	u, err := ValidateURL(base)
 	if err != nil {
 		return a, err
 	}
-	u.Path = "/api/athlete/v2/self"
+	u.Path = "/api/athlete/v2/" + ident
 	u.RawQuery = "resource=state&resource=athlete"
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}

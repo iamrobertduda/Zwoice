@@ -3,6 +3,25 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  observer-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build private observer runtime (never published)
+        run: docker build --platform linux/amd64 -f deploy/observer/Dockerfile -t zwoice-observer:test .
+      - name: Verify official headless runtime without credentials or network
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,size=64m --tmpfs /home/node:rw,nosuid,size=32m,uid=1000,gid=1000 \
+            --entrypoint /opt/sauce/sauce4zwift -e ELECTRON_RUN_AS_NODE=1 zwoice-observer:test \
+            /opt/sauce/resources/app.asar/src/headless.mjs --headless --help > /tmp/sauce-help.txt
+          grep -q -- --athlete-id /tmp/sauce-help.txt
+          ! grep -q 'World data load error' /tmp/sauce-help.txt
+      - name: Verify private settings initialization
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,size=64m --entrypoint node zwoice-observer:test \
+            /opt/zwoice/init.mjs /tmp/observer-home 12080
   core:
     strategy:
       matrix:

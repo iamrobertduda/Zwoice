@@ -10,15 +10,17 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/iamrobertduda/Zwoice/internal/accounts"
 	"github.com/iamrobertduda/Zwoice/internal/broker"
 	"github.com/iamrobertduda/Zwoice/internal/desktop"
+	"github.com/iamrobertduda/Zwoice/internal/observer"
+	"github.com/iamrobertduda/Zwoice/internal/sauce"
+	"github.com/iamrobertduda/Zwoice/internal/testsupport"
 )
 
 type source struct {
@@ -30,6 +32,7 @@ type source struct {
 	riding    bool
 	frozen    bool
 	worldTime int64
+	proof     string
 }
 
 func (s *source) snapshot() any {
@@ -45,51 +48,7 @@ func (s *source) snapshot() any {
 	if s.id == 1002 {
 		name = "Emma Klein"
 	}
-	return map[string]any{"athlete": map[string]string{"name": name}, "version": 2, "athleteId": s.id, "self": true, "age": 0, "state": map[string]any{"x": s.x * 100, "y": 0, "z": 1000, "courseId": s.course, "eventSubgroupId": s.event, "worldTime": s.worldTime, "sport": "cycling"}}
-}
-func (s *source) handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/athlete/v2/self", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(s.snapshot()) })
-	mux.HandleFunc("GET /api/ws/events", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.CloseNow()
-		ctx := r.Context()
-		var request struct {
-			Type string `json:"type"`
-			UID  int    `json:"uid"`
-			Data struct {
-				Method string `json:"method"`
-				Arg    struct {
-					Event string `json:"event"`
-					SubID int    `json:"subId"`
-				} `json:"arg"`
-			} `json:"data"`
-		}
-		if wsjson.Read(ctx, conn, &request) != nil {
-			return
-		}
-		if request.Data.Method != "subscribe" || request.Data.Arg.Event != "athlete/self/v2" {
-			return
-		}
-		wsjson.Write(ctx, conn, map[string]any{"type": "response", "uid": request.UID, "success": true})
-		ctx = conn.CloseRead(ctx)
-		ticker := time.NewTicker(200 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if wsjson.Write(ctx, conn, map[string]any{"type": "event", "uid": request.Data.Arg.SubID, "success": true, "data": s.snapshot()}) != nil {
-					return
-				}
-			}
-		}
-	})
-	return mux
+	return map[string]any{"athlete": map[string]string{"name": name + " " + s.proof}, "version": 2, "athleteId": s.id, "self": true, "age": 0, "state": map[string]any{"x": s.x * 100, "y": 0, "z": 1000, "courseId": s.course, "eventSubgroupId": s.event, "worldTime": s.worldTime, "sport": "cycling"}}
 }
 func serve(address string, h http.Handler) {
 	go func() { log.Fatal(http.ListenAndServe(address, h)) }()
@@ -121,6 +80,8 @@ func main() {
 
 	serverURL := "http://127.0.0.1:18089"
 
+	sources := map[string]*source{"1001": {id: 1001, course: 1, riding: true}, "1002": {id: 1002, x: 8, course: 1, riding: true}}
+	observerToken := strings.Repeat("synthetic-observer-", 3)
 	var current atomic.Pointer[broker.Hub]
 	var cancel context.CancelFunc
 	var resetMu sync.Mutex
@@ -132,16 +93,38 @@ func main() {
 		}
 		ctx, stop := context.WithCancel(context.Background())
 		cancel = stop
-		h := broker.New(broker.Config{Accounts: store, CloudflareKeyID: os.Getenv("ZWOICE_TEST_CF_KEY"), CloudflareAPIToken: os.Getenv("ZWOICE_TEST_CF_TOKEN")})
+		h := broker.New(broker.Config{Accounts: store, Observer: observer.New(observerToken, 20), CloudflareKeyID: os.Getenv("ZWOICE_TEST_CF_KEY"), CloudflareAPIToken: os.Getenv("ZWOICE_TEST_CF_TOKEN")})
 		current.Store(h)
 		go h.Run(ctx)
+		go testsupport.Observe(ctx, serverURL, observerToken, 20, func(id int64) (sauce.Athlete, bool) {
+			source := sources[strconv.FormatInt(id, 10)]
+			if source == nil {
+				return sauce.Athlete{}, false
+			}
+			data, _ := json.Marshal(source.snapshot())
+			var a sauce.Athlete
+			json.Unmarshal(data, &a)
+			return a, true
+		}, func(f observer.Frame) []observer.Profile {
+			var results []observer.Profile
+			for id, source := range sources {
+				name := "Flo Weber"
+				if id == "1002" {
+					name = "Emma Klein"
+				}
+				source.mu.Lock()
+				name += " " + source.proof
+				source.mu.Unlock()
+				if (f.Type == "profile" && source.id == f.AthleteID) || (f.Type == "search" && (id == f.Query || strings.Contains(strings.ToLower(name), strings.ToLower(f.Query)))) {
+					results = append(results, observer.Profile{ID: source.id, Name: strings.TrimSpace(name)})
+				}
+			}
+			return results
+		})
 	}
 	reset()
 	serve("127.0.0.1:18089", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { current.Load().Handler().ServeHTTP(w, r) }))
-	sources := map[string]*source{"1001": {id: 1001, course: 1, riding: true}, "1002": {id: 1002, x: 8, course: 1, riding: true}}
 
-	serve("127.0.0.1:11081", sources["1001"].handler())
-	serve("127.0.0.1:11082", sources["1002"].handler())
 	serve("127.0.0.1:18787", desktop.Handler("127.0.0.1:18787"))
 	serve("127.0.0.1:18788", desktop.Handler("127.0.0.1:18788"))
 	mux := http.NewServeMux()
@@ -152,6 +135,17 @@ func main() {
 	})
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"server": serverURL})
+	})
+	mux.HandleFunc("POST /profile", func(w http.ResponseWriter, r *http.Request) {
+		source := sources[r.URL.Query().Get("id")]
+		if source == nil {
+			http.Error(w, "unknown rider", 400)
+			return
+		}
+		source.mu.Lock()
+		source.proof = r.URL.Query().Get("code")
+		source.mu.Unlock()
+		w.WriteHeader(204)
 	})
 	mux.HandleFunc("POST /move", func(w http.ResponseWriter, r *http.Request) {
 		s := sources[r.URL.Query().Get("id")]

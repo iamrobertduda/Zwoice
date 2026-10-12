@@ -155,8 +155,8 @@
                 <div class="eyebrow">WILLKOMMEN IN DEINEM GRUPPETTO</div>
                 <h2 id="setupTitle">Wir schauen, ob deine Fahrt bereit ist.</h2>
                 <p id="setupDescription">
-                  Einmal per E-Mail anmelden. Deine Fahrt erkennt Zwoice danach
-                  automatisch über Sauce.
+                  Anmelden, deinen Zwift-Fahrer verknüpfen und losfahren.
+                  Die Verbindung zu deiner Fahrt übernehmen wir.
                 </p>
               </div>
             </div>
@@ -164,8 +164,8 @@
               <li id="setupAccount">
                 <span aria-hidden="true">1</span> Anmelden
               </li>
-              <li id="setupSauce">
-                <span aria-hidden="true">2</span> Sauce finden
+              <li id="setupLink">
+                <span aria-hidden="true">2</span> Fahrer verknüpfen
               </li>
               <li id="setupRide">
                 <span aria-hidden="true">3</span> Fahrt erkennen
@@ -174,29 +174,8 @@
                 <span aria-hidden="true">4</span> Mikrofon freigeben
               </li>
             </ol>
-            <div id="sauceActions" class="setup-actions" hidden>
-              <a
-                href="https://www.sauce.llc/products/sauce4zwift/download"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="secondary-button"
-                >Sauce herunterladen ↗</a
-              >
-              <details>
-                <summary>Sauce läuft schon?</summary>
-                <p>
-                  Öffne in Sauce
-                  <strong>Einstellungen → Allgemein/General</strong> und schalte
-                  den Webserver ein. Zwoice erkennt die Verbindung automatisch.
-                </p>
-                <button
-                  type="button"
-                  class="text-button"
-                  id="connectionSettingsButton"
-                >
-                  Sauce auf einem anderen Computer?
-                </button>
-              </details>
+            <div id="linkActions" class="setup-actions" hidden>
+              <button id="linkRiderButton" class="secondary-button">Zwift-Fahrer verknüpfen →</button>
             </div>
             <p class="setup-privacy">
               Erst mit „Fahrt starten“ und deiner Mikrofonfreigabe wird der
@@ -329,12 +308,12 @@
               <section class="connection-panel">
                 <div class="panel-heading"><h2>Alles verbunden?</h2></div>
                 <div class="connection-row">
-                  <span class="connection-logo">S</span>
+                  <span class="connection-logo">↗</span>
                   <div>
-                    <strong>Sauce for Zwift</strong
-                    ><small id="sauceDetail">Wartet auf Verbindung</small>
+                    <strong>Deine Zwift-Fahrt</strong
+                    ><small id="positionDetail">Wartet auf Verbindung</small>
                   </div>
-                  <span class="connection-indicator" id="sauceIndicator"></span>
+                  <span class="connection-indicator" id="positionIndicator"></span>
                 </div>
                 <div class="connection-row">
                   <span class="connection-logo zwoice">z.</span>
@@ -394,14 +373,7 @@
         <p class="dialog-description">
           Alles ist voreingestellt. Ändere hier nur, was du anders möchtest.
         </p>
-        <label
-          >Anzeigename (optional)<input
-            name="name"
-            id="displayName"
-            maxlength="32"
-            placeholder="Automatisch aus Zwift"
-            autocomplete="nickname"
-        /></label>
+
         <fieldset>
           <legend>Audio</legend>
           <label
@@ -430,18 +402,9 @@
         <details class="advanced-settings" id="advancedSettings">
           <summary>Erweitert · Verbindung</summary>
           <p class="field-note">
-            Nur nötig, wenn Sauce auf einem anderen Computer läuft oder du einen
-            eigenen Zwoice-Server nutzt.
+            Nur nötig, wenn du einen eigenen Zwoice-Server nutzt.
           </p>
           <div class="form-columns">
-            <label
-              >Sauce-Adresse<input
-                name="sauce"
-                id="sauceURL"
-                type="url"
-                value="http://127.0.0.1:1080"
-                required
-            /></label>
             <label
               >Zwoice-Server<input
                 name="server"
@@ -471,10 +434,10 @@
       </div>
       <ol class="help-steps">
         <li>
-          <strong>Zwift und Sauce starten</strong>
+          <strong>Deinen Fahrer verknüpfen</strong>
           <p>
-            Sauce muss deine eigene Fahrt beobachten. Aktiviere den lokalen
-            Webserver in Sauce (normalerweise Port 1080).
+            Suche nach deinem Zwift-Namen und bestätige einmalig, dass der Fahrer dir gehört.
+            Eine zusätzliche Sauce-Installation brauchst du nicht.
           </p>
         </li>
         <li>
@@ -482,7 +445,7 @@
           <p>
             Melde dich mit deiner E-Mail an. Ein Code bestätigt dein Konto –
             ohne Passwort oder Einladung. Klicke danach auf „Fahrt starten“ und
-            erlaube dein Mikrofon. Deinen Fahrer erkennt Zwoice selbst.
+            erlaube dein Mikrofon. Starte deine Fahrt in Zwift – die Verbindung läuft automatisch.
           </p>
         </li>
         <li>
@@ -575,12 +538,40 @@
       <div id="accountDetails" hidden>
         <p class="account-email" id="accountEmail"></p>
         <p class="dialog-description" id="accountAccess"></p>
+        <p id="linkedRiderName" class="dialog-description"></p>
+        <button class="secondary-button" id="manageRiderButton">Zwift-Fahrer verknüpfen</button>
         <div class="dialog-actions">
           <button class="text-button" id="logoutButton">Abmelden</button
           ><button class="secondary-button" id="adminButton" hidden>
             Zugänge verwalten
           </button>
         </div>
+      </div>
+    </dialog>
+    <dialog id="zwiftDialog" aria-labelledby="zwiftTitle">
+      <div class="dialog-heading">
+        <h2 id="zwiftTitle">Das bist du auf Zwift.</h2>
+        <button class="square-button" data-close="zwiftDialog" aria-label="Schließen">×</button>
+      </div>
+      <p id="zwiftMessage" class="notice" role="status" hidden></p>
+      <form id="zwiftSearchForm">
+        <p class="dialog-description">Finde deinen Fahrer. Das brauchst du nur beim ersten Mal zu machen.</p>
+        <label>Dein Name auf Zwift<input id="zwiftQuery" autocomplete="off" minlength="3" maxlength="120" placeholder="Vorname Nachname" required></label>
+        <div class="dialog-actions"><button class="primary-button" type="submit">Fahrer suchen →</button></div>
+        <div id="zwiftResults" class="rider-results" aria-live="polite"></div>
+      </form>
+      <form id="zwiftProofForm" hidden>
+        <p class="dialog-description">Bestätige, dass <strong id="zwiftChosenName"></strong> dein Fahrer ist.</p>
+        <p>Füge diesen Code kurz am Ende deines Nachnamens im Zwift-Profil hinzu:</p>
+        <div class="link-code"><code id="zwiftProofCode"></code><button class="secondary-button" type="button" id="copyZwiftCode">Code kopieren</button></div>
+        <p class="field-note">In Zwift Companion: Profil → Bearbeiten. Lass ein Leerzeichen vor dem Code. Nach der Bestätigung kannst du ihn wieder entfernen. Wir brauchen dein Zwift-Passwort nicht.</p>
+        <p id="zwiftExpiry" class="field-note"></p>
+        <div class="dialog-actions"><button class="text-button" type="button" id="chooseOtherRider">Anderer Fahrer</button><button class="primary-button" type="submit">Code ist eingetragen →</button></div>
+      </form>
+      <div id="zwiftLinked" hidden>
+        <p class="dialog-description" id="zwiftLinkedName"></p>
+        <p>Deine Verbindung ist gespeichert. Du kannst den Bestätigungscode jetzt aus deinem Zwift-Namen entfernen.</p>
+        <div class="dialog-actions"><button class="text-button" id="unlinkRider">Verknüpfung lösen</button><button class="primary-button" data-close="zwiftDialog">Fertig</button></div>
       </div>
     </dialog>
     <dialog id="adminDialog" aria-labelledby="adminTitle">
@@ -599,6 +590,7 @@
         Cloudflare-TURN-Zugänge. Tageslimits zählen Freigabeversuche, keine
         Datenmenge.
       </p>
+      <p class="field-note" id="observerStatus"></p>
       <p id="adminMessage" class="notice" role="status" hidden></p>
       <form id="policyForm">
         <fieldset>

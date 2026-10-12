@@ -32,7 +32,7 @@ func TestTURNRequiresLiveAccountAndRevokes(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"iceServers": []map[string]any{{"urls": []string{"turn:example.test:3478"}, "username": "scoped-user", "credential": "ephemeral-secret"}}})
 	}))
 	defer cloud.Close()
-	hub := New(Config{Accounts: store, CloudflareKeyID: "key", CloudflareAPIToken: "cf-secret", TURNEndpoint: cloud.URL})
+	hub := New(Config{Accounts: store, Observer: connectedObserver(t), CloudflareKeyID: "key", CloudflareAPIToken: "cf-secret", TURNEndpoint: cloud.URL})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go hub.Run(ctx)

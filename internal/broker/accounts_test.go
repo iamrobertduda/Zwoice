@@ -29,5 +29,13 @@ func accountFixture(t *testing.T) (*accounts.Store, string, accounts.Account) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ch, err := store.BeginZwiftLink(token, 123)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConfirmZwiftLink(token, ch, 123, "Test Rider "+ch.Code); err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ = store.Authenticate(token)
 	return store, token, a
 }

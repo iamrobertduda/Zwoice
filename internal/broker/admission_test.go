@@ -15,14 +15,14 @@ import (
 
 func TestAccountJoinAndDuplicate(t *testing.T) {
 	store, token, _ := accountFixture(t)
-	hub := New(Config{Accounts: store})
+	hub := New(Config{Accounts: store, Observer: connectedObserver(t)})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go hub.Run(ctx)
 	server := httptest.NewServer(hub.Handler())
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/session"
-	opts := &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-Id": []string{"123"}, "Authorization": []string{"Bearer " + token}}}
+	opts := &websocket.DialOptions{HTTPHeader: http.Header{"Zwoice-Athlete-Id": []string{"999"}, "Authorization": []string{"Bearer " + token}}}
 	c, _, err := websocket.Dial(ctx, url, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -47,16 +47,7 @@ func TestAccountJoinAndDuplicate(t *testing.T) {
 	if err == nil || res.StatusCode != 409 {
 		t.Fatal("same account connected twice with different athlete IDs")
 	}
-	for _, id := range []string{"0", "-1", "abc", "9007199254740992"} {
-		opts.HTTPHeader.Set("Zwoice-Athlete-ID", id)
-		conn, res, err := websocket.Dial(ctx, url, opts)
-		if conn != nil {
-			conn.CloseNow()
-		}
-		if err == nil || res.StatusCode != 400 {
-			t.Fatal("invalid ID accepted", id)
-		}
-	}
+
 }
 
 func TestPublicAdmissionResourceBounds(t *testing.T) {

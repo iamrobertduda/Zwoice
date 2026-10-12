@@ -1,0 +1,29 @@
+services:
+  observer:
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: deploy/observer/Dockerfile
+    init: true
+    restart: unless-stopped
+    read_only: true
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    # Initial test ceiling, not a measured capacity promise.
+    mem_limit: 4g
+    cpus: 2
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000
+    volumes:
+      - observer-data:/data
+      - ./observer.json:/run/secrets/observer.json:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    # Outbound WSS to Railway and Sauce/Zwift traffic only. No host ports.
+volumes:
+  observer-data:

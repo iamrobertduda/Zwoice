@@ -22,7 +22,7 @@ func TestSignalAuthorizationAndFreshness(t *testing.T) {
 	h.clients = map[string]*client{"a": a, "b": b, "c": c}
 	pos := proximity.Position{Course: 1, Realm: 1, Sport: "CYCLING"}
 	for _, client := range h.clients {
-		h.handle(client, Message{Type: "position", Position: &pos}, now)
+		h.applyPosition(client, &pos, now)
 	}
 	c.rider.Cohort = "other"
 	h.tick(now)
@@ -68,13 +68,13 @@ func TestCapacityRecoversAndIndexDoesNotLeak(t *testing.T) {
 		id := fmt.Sprint(i)
 		c := fakeClient(id, now)
 		h.clients[id] = c
-		h.handle(c, Message{Type: "position", Position: &p}, now)
+		h.applyPosition(c, &p, now)
 	}
 	if !h.clients["64"].rider.Updated.IsZero() {
 		t.Fatal("dense cell admitted beyond capacity")
 	}
-	h.handle(h.clients["0"], Message{Type: "position"}, now)
-	h.handle(h.clients["64"], Message{Type: "position", Position: &p}, now.Add(time.Second))
+	h.applyPosition(h.clients["0"], nil, now)
+	h.applyPosition(h.clients["64"], &p, now.Add(time.Second))
 	if h.clients["64"].rider.Updated.IsZero() {
 		t.Fatal("capacity failed to recover")
 	}
@@ -99,5 +99,17 @@ func TestHTTPAuthBoundary(t *testing.T) {
 		if w.Code != tc.code {
 			t.Errorf("got %d, expected %d", w.Code, tc.code)
 		}
+	}
+}
+
+func TestClientCannotPublishPositionOrIdentity(t *testing.T) {
+	h := New(Config{})
+	now := time.Now()
+	c := fakeClient("123", now)
+	p := proximity.Position{Course: 1, Realm: 1, Sport: "CYCLING"}
+	h.handle(c, Message{Type: "position", Position: &p}, now)
+	h.handle(c, Message{Type: "hello", Name: "Another rider"}, now)
+	if !c.rider.Updated.IsZero() || c.rider.Name != "123" {
+		t.Fatal("client overrode authoritative rider data")
 	}
 }

@@ -1,8 +1,10 @@
 # Zwoice
 
+**Entwicklungszweig für zentrale Beobachter – noch nicht veröffentlicht.** Umstellung und Freigabekriterien: [OBSERVERS.md](docs/OBSERVERS.md). Die verlinkte öffentliche Website liefert weiterhin die bisherige Version mit lokalem Sauce.
+
 **Zusammen in Hörweite.** Plattformübergreifender Proximity-Voice-Chat für Zwift, mit Positionsdaten aus Sauce for Zwift.
 
-Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandenen Browser. Es bündelt weder Chromium noch eine Node-Runtime. Der Browser übernimmt seine optimierte WebRTC-Audioverarbeitung. Der Go-Prozess verbindet die lokale Sauce-API mit dem Signalisierungsdienst auf Railway. Sprache läuft verschlüsselt direkt zwischen Fahrern, bei Bedarf über TURN.
+Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandenen Browser. Es bündelt weder Chromium noch eine Node-Runtime. Der Browser übernimmt seine optimierte WebRTC-Audioverarbeitung. Der Go-Prozess verbindet die Browseroberfläche mit Railway. Ein zentraler Betreiber-Worker liefert ausschließlich die Positionen bestätigter Fahrer. Sprache läuft verschlüsselt direkt zwischen Fahrern, bei Bedarf über TURN.
 
 ![Zwoice mit ausdrücklich simulierten Demo-Teilnehmern](assets/zwoice-preview.png)
 
@@ -12,20 +14,23 @@ Die Oberfläche und die [Website](assets/zwoice-website.png) verwenden ein gemei
 
 1. [Zwoice herunterladen](https://zwoice-production.up.railway.app/) und öffnen.
 2. Mit E-Mail und Anmeldecode dein Konto erstellen oder anmelden.
-3. Zwift und Sauce starten, **Fahrt starten** anklicken und das Mikrofon erlauben.
+3. Den eigenen Zwift-Fahrer suchen und mit einem vorübergehenden Profilcode bestätigen.
+4. Zwift starten, **Fahrt starten** anklicken und das Mikrofon erlauben.
 
-Ein verifiziertes Zwoice-Konto ist für Sprachchat und TURN erforderlich. Keine Einladung und keine Eingabe von IDs oder Serveradressen. Auf Wunsch bleibt die Anmeldung auf dem Gerät 30 Tage gültig. Zwoice übernimmt deinen Fahrer und Anzeigenamen automatisch aus Sauce und wartet auf deine Fahrt. Der Startbildschirm zeigt direkt, wenn Sauce oder die eigene Fahrt noch fehlt. Technische Optionen sind unter „Erweitert“ verborgen.
+Dieser Ablauf gehört zum neuen Entwicklungsstand. Die bestehenden Downloads enthalten ihn noch nicht.
+
+Ein verifiziertes Zwoice-Konto ist für Sprachchat und TURN erforderlich. Keine Einladung und keine Eingabe von IDs oder Serveradressen. Auf Wunsch bleibt die Anmeldung auf dem Gerät 30 Tage gültig. Zwoice merkt sich die bestätigte Fahrer-Verknüpfung und wartet auf frische Daten von den zentralen Beobachtern. Technische Optionen sind unter „Erweitert“ verborgen.
 
 [Anmeldung ansehen](assets/zwoice-login.png) · [Betreiberansicht ansehen](assets/zwoice-admin.png) (mit Testkonten).
 
-Alle aktiven Zwoice-Nutzer in derselben Zwift-Welt, Event-Gruppe und Sportart können sich in räumlicher Nähe hören. Zwoice verlangt keine Zwift-Passwörter. Sauce und Zwift bleiben separate Anwendungen mit eigener Einrichtung. Die von Sauce gelieferte Identität ist keine kryptografisch verifizierte Zwift-Kontoinhaberschaft; siehe [Sicherheitsmodell](docs/SECURITY.md).
+Alle aktiven Zwoice-Nutzer in derselben Zwift-Welt, Event-Gruppe und Sportart können sich in räumlicher Nähe hören. Zwoice verlangt keine Zwift-Passwörter. Endnutzer installieren kein Sauce mehr. Die Profilbestätigung belegt Zugriff auf den Zwift-Namen zum Bestätigungszeitpunkt, ist aber kein offizieller Zwift-OAuth-Login; siehe [Sicherheitsmodell](docs/SECURITY.md).
 
 Die **Demo** ist eine ausdrücklich gekennzeichnete Vorschau. Sie benötigt weder Sauce noch Mikrofon und überträgt keine Sprache.
 
 ## Funktionen
 
 - Selbstregistrierung per verifiziertem E-Mail-Code; geschützte Sitzungen und Betreiberansicht für Kontosperren, Sprachzugang und Tageslimits.
-- Eigene Position über das tatsächliche Sauce-Abonnement `athlete/self/v2`, nicht über den beobachteten Kamerafahrer.
+- Fahrer-Verknüpfung und zentrale Position über das ID-gebundene Sauce-Abonnement `athlete/{id}/v2`; Benutzer können keine eigenen Positionen hochladen.
 - Dreidimensionale Distanz; volle Lautstärke bis 10 m, sanftes Ausblenden bis 60 m. Bestehende Verbindungen bleiben bis 75 m stumm bereit, um ständiges Neuverbinden zu vermeiden.
 - Höchstens sechs Sprachpartner pro Fahrer, symmetrische Verbindungen und räumliche Indizierung auf dem Server.
 - Opus mit 32 kbit/s Obergrenze pro Sender/Verbindung, DTX und FEC in der Aushandlung; Mono, Echounterdrückung, Geräuschunterdrückung und automatische Pegelregelung nach Browser-Unterstützung.
@@ -65,13 +70,14 @@ npm run test:browser
 node scripts/release.mjs 1.3.0
 ```
 
-Node/Playwright werden ausschließlich für Entwicklung und Tests benötigt. Die Browser-Integrationstests starten zwei vollständige lokale Clients, einen echten Signalisierungsserver und eine kontrollierte Sauce-Quelle. Sie prüfen tatsächliche WebRTC-Audiopakete, Stummschaltung, Distanzänderung, Weltwechsel, veraltete Daten, Server-Neustart und Freigabe der Audiogeräte.
+Desktop-Nutzer benötigen weder Node noch Sauce. Node/Playwright dienen der Entwicklung; der zentrale Betreiber-Worker verwendet separat die offizielle Sauce-Laufzeit und Node für die isolierte Konfiguration. Die Browser-Integrationstests starten zwei vollständige lokale Clients, einen echten Signalisierungsserver und einen authentifizierten synthetischen Beobachter. Sie prüfen tatsächliche WebRTC-Audiopakete, Stummschaltung, Distanzänderung, Weltwechsel, veraltete Daten, Server-Neustart und Freigabe der Audiogeräte.
 
 Die Paketierung erzeugt sechs portable Pakete und auf macOS eine universelle DMG. `scripts/windows-installer.ps1` baut unter Windows einen Installer, der AMD64/ARM64 automatisch auswählt; CI prüft Installation, Programmstart und Deinstallation. SHA-256-Prüfsummen begleiten die Veröffentlichung. macOS-Pakete enthalten eine `.app`; ohne Entwicklerzertifikat ist ihre lokale Signatur keine Apple-Notarisierung. Windows-Pakete sind ohne bereitgestelltes Zertifikat unsigniert.
 
 ## Betrieb und technische Entscheidungen
 
 - [Installation und Bedienung](docs/INSTALL.md)
+- [Zentrale Beobachter, öffentliche Bedingungen und Kapazitätsprüfung](docs/OBSERVERS.md)
 - [Railway und Cloudflare TURN](docs/DEPLOYMENT.md)
 - [Architektur, Grenzen und Skalierung](docs/ARCHITECTURE.md)
 - [Geprüfte Sauce-Schnittstelle](docs/SAUCE.md)
