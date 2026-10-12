@@ -406,11 +406,29 @@ test("missing Sauce gives an actionable prompt and upgrades discard old invitati
 
 test("public download page offers one installer per desktop platform", async ({
   page,
+  request,
 }) => {
-  await page.goto("http://127.0.0.1:18089");
+  const root = await request.get("http://127.0.0.1:18089/", {
+    headers: { "Accept-Language": "de-AT,de;q=0.9,en;q=0.8" },
+    maxRedirects: 0,
+  });
+  expect(root.status()).toBe(302);
+  expect(root.headers().location).toBe("/de/");
+  await page.goto("http://127.0.0.1:18089/de/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "Dein nächstes Gespräch",
   );
+  await page.locator(".lang-menu summary").click();
+  await page
+    .getByRole("link", { name: "English", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL("http://127.0.0.1:18089/en/");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Your next conversation",
+  );
+  await expect(page.locator("#downloadButton")).toContainText("Download for");
+  await page.goto("http://127.0.0.1:18089/de/");
   await expect(
     page.getByRole("link", { name: "GitHub", exact: true }),
   ).toHaveAttribute("href", "https://github.com/iamrobertduda/Zwoice");

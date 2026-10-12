@@ -6,7 +6,7 @@ Zwoice besteht aus einem kleinen Go-Programm und einer Oberfläche im vorhandene
 
 ![Zwoice mit ausdrücklich simulierten Demo-Teilnehmern](assets/zwoice-preview.png)
 
-Die Oberfläche und die [Website](assets/zwoice-website.png) verwenden ein gemeinsames dunkles Design mit blauvioletten Akzenten. Schriften und Grafiken werden lokal ausgeliefert; es kommen keine zusätzlichen Laufzeitbibliotheken hinzu.
+Die Oberfläche und die [Website](assets/zwoice-website.png) verwenden ein gemeinsames dunkles Design mit blauvioletten Akzenten. Schriften und Grafiken werden lokal ausgeliefert; es kommen keine zusätzlichen Laufzeitbibliotheken hinzu. Die Website gibt es auf Deutsch, Englisch, Französisch, Niederländisch, Italienisch, Spanisch, Dänisch, Norwegisch, Schwedisch, Polnisch und Portugiesisch (`/de/`, `/en/` …); `/` leitet nach Browsersprache weiter, sonst auf Englisch. Die Texte liegen in `internal/web/site/i18n/`, die App selbst ist weiterhin deutsch.
 
 ## Benutzen
 

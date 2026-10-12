@@ -90,3 +90,13 @@ Die Landingpage orientiert sich an der am 12. Oktober 2026 geprüften [Discord-W
 - Screenshots von Website, Demo, Anmeldung, Einstellungen und Betreiberansicht visuell geprüft. Die Konten auf den Screenshots sind ausschließlich lokale Testkonten.
 
 Die bestehende Mailkonfiguration auf Railway ist weiterhin Voraussetzung für echte Registrierungen. Dieses Design-Update verändert keine Zugangsregeln oder Infrastrukturvariablen.
+
+### Landingpage-Überarbeitung
+
+Die öffentliche Seite übernimmt weitere Muster der Discord-Website: schwebender Header beim Scrollen, Sternenhimmel mit Horizont im Hero, Laufband, farbige Funktionskacheln, drei Startschritte und ein abschließender Download-Aufruf. Der Abstands-Regler nutzt dieselbe Lautstärkekurve wie `distanceGain()` (voll bis 10 m, still ab 60 m). Animationen entfallen bei „Bewegung reduzieren“; ohne JavaScript bleibt alle Information sichtbar. Weiterhin nur lokale Schriften und Grafiken unter der bestehenden CSP, ohne Inline-Stile oder -Skripte.
+
+Die Seite wird serverseitig aus `internal/web/site/download.html` und je einer Übersetzungsdatei gerendert: Deutsch, Englisch, Französisch, Niederländisch, Italienisch, Spanisch, Dänisch, Norwegisch, Schwedisch, Polnisch und Portugiesisch unter `/{sprache}/`, mit `hreflang`, Canonical-Link und Sprachwahl in Kopf- und Fußzeile. `/` leitet per `Accept-Language` weiter (302, `Vary: Accept-Language`), ohne passende Sprache auf Englisch; es wird kein Cookie gesetzt. Nicht-deutsche Seiten weisen darauf hin, dass die App selbst deutsch ist, und nennen die Schaltfläche „Fahrt starten“ mit Übersetzung.
+
+- Alle elf Sprachen bei 320, 390, 768, 1024 und 1440 Pixeln Breite ohne horizontales Scrollen oder abgeschnittene Überschriften; keine Konsolen- oder CSP-Fehler. Per Skript erzeugte Texte (Download-Knopf, Abstands-Regler, Mikrofon-Vorschau) erscheinen in der Seitensprache, Zahlen und Einheiten über `Intl`.
+- Go-Tests prüfen vollständige und gleich strukturierte Übersetzungen, das Rendern jeder Sprache, Weiterleitung, 404 für unbekannte Pfade und die Absicherung des Host-Headers für absolute Links.
+- Lokal bestanden: `go vet`, alle Go-Race-Tests, JavaScript-Tests, `npm run check` und alle sechs Browser-Szenarien.
